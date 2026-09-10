@@ -1,0 +1,19 @@
+# 官方模拟器二进制（805MB，不入库）
+CUMCM2026B/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 模拟器运行产物
+*.sqlite3
+*.log
+
+# 编辑器/系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
