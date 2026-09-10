@@ -1,0 +1,21 @@
+# Root config for radio_rl (Way 2).
+#
+# Everything is swappable by editing one line here or via a CLI override, e.g.
+#   python -m radio_rl.run env=official algorithm=heuristic problem=4
+# The default path is intentionally the simplest that runs end to end:
+# LocalEnv + smooth error field + the pure-math greedy heuristic agent.
+defaults:
+  - env: local
+  - error_field: smooth
+  - generator: default
+  - geometry: default
+  - candidates: default
+  - algorithm: heuristic
+  - safety: default
+  - evaluation: default
+  - _self_
+
+seed: 0
+problem: 3          # 3 = omnidirectional sources only; 4 = includes 180-deg sources
+device: cpu
+run_name: default

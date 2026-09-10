@@ -1,0 +1,8 @@
+# Smooth spatially-correlated bearing-error field (the realistic default).
+# Sum of sinusoids; the per-location error is a deterministic function of (x, y),
+# NOT per-measurement noise. Total amplitude is bounded to <= 1 degree.
+kind: smooth
+params:
+  length_scale: 300.0
+  n_components: 12
+  amplitude: 1.0

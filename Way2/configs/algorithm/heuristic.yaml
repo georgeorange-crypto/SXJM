@@ -1,0 +1,5 @@
+# Pure-mathematical greedy agent. No neural network, no torch. This is the
+# default so the whole pipeline runs end to end before any model exists, and it
+# is the emergency fallback when the wall-clock budget runs low.
+type: heuristic
+name: greedy_math

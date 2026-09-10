@@ -1,0 +1,5 @@
+# Safety shield / action validator parameters. The shield is the last stage
+# before the environment and guarantees every emitted Action is physically legal.
+enforce_arena: true         # clamp/So reject targets outside the 1800 m disc
+arena_slack_m: 0.0          # allowed overshoot past the boundary (0 = strict)
+clamp_out_of_bounds: true   # clamp offending targets back onto the boundary vs. drop
