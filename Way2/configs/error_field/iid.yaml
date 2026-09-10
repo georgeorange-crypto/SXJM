@@ -1,0 +1,5 @@
+# Independent per-location error (hash-based). Worst case for triangulation
+# because nearby measurements give uncorrelated errors.
+kind: iid
+params:
+  magnitude: 1.0

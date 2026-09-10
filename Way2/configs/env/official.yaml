@@ -1,0 +1,9 @@
+# Official competition simulator (Windows binary serving HTTP on loopback).
+# Selected with `env=official`. The agent must not be able to tell this apart
+# from the local env: identical observation structure and timing semantics.
+type: official
+base_url: "http://127.0.0.1:2026"
+robot_id: "default"      # must equal the registered team number the server checks
+timeout_s: 10.0
+connect_retries: 30      # the binary can take a moment to start listening
+retry_delay_s: 0.5

@@ -1,0 +1,6 @@
+# Case generation parameters (LocalEnv only; the official env owns its own cases).
+# null values are resolved at runtime: jammer counts drawn in [10, 16], and the
+# directional count derives from `problem` (P3 -> 0, P4 -> at least 1).
+n_jammers: null
+n_directional: null
+margin_m: 30.0        # keep sources this far inside the arena boundary

@@ -1,0 +1,17 @@
+# Candidate generator parameters. The generator produces at most k_max scored
+# options each step; the agent only ever picks an index into this padded set.
+k_max: 32
+
+search:
+  ring_radii: [600.0, 1200.0, 1650.0]   # concentric rings to probe unknown channels
+  n_angles: 8                            # directions per ring
+localization:
+  n_offsets: 6                           # sideways offsets to improve triangulation
+  baseline_m: 400.0                      # preferred perpendicular baseline length
+  step_toward_m: 500.0                   # step length when closing on a region
+  max_scans: 30                          # give up triangulating a channel after this many scans
+clear:
+  enabled: true                          # emit CLEAR candidates for localized sources
+  margin_m: 1.0                          # clear only when MEC radius <= clear_radius - margin (guaranteed hit)
+safety:
+  enabled: true                          # always keep at least one legal fallback move

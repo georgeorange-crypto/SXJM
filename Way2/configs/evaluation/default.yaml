@@ -1,0 +1,6 @@
+# Evaluation harness parameters.
+n_episodes: 20
+seeds: null          # null -> derive from base seed (seed, seed+1, ...)
+max_steps: 100000    # hard cap on actions per episode (safety net)
+stress: false        # if true, draw from the stress-case distribution
+verbose: true

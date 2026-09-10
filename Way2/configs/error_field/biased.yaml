@@ -1,0 +1,7 @@
+# Smooth field with a constant directional bias added (systematic error).
+kind: biased
+params:
+  bias: 0.6
+  length_scale: 300.0
+  n_components: 12
+  amplitude: 0.4

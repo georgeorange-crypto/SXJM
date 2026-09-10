@@ -1,0 +1,5 @@
+# Piecewise-constant error over spatial blocks (discontinuous field).
+kind: piecewise
+params:
+  n_blocks: 8
+  magnitude: 1.0

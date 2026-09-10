@@ -1,0 +1,6 @@
+# Adversarial field concentrating error where it hurts (arena boundary by default).
+kind: adversarial
+params:
+  magnitude: 1.0
+  length_scale: 150.0
+  mode: boundary

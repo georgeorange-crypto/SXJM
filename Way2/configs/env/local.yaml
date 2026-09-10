@@ -1,0 +1,5 @@
+# Self-contained local simulator (ported physics oracle). No network needed.
+type: local
+# Task-time (virtual) and program wall-clock caps handed back by enter().
+max_virtual_duration_s: 360000.0
+max_real_duration_s: 1200.0
