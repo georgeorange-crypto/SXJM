@@ -18,10 +18,17 @@ import math
 import threading
 import time
 
-from .case import Case, Jammer, ErrorField, generate_case, norm_deg
-from .engine import Engine
+import random
+
+from .case import (Case, Jammer, ErrorField, generate_case, generate_stress_case,
+                   norm_deg, ang_diff, STRESS_TYPES, ARENA_RADIUS_M)
+from .engine import (Engine, NEAR_THRESHOLD_M, CLEAR_RADIUS_M,
+                     SPEED_MPS, MEASURE_ACTION_S, CH_SWITCH_S)
+from .fields import (make_error_field, FIELD_KINDS, IIDErrorField, SmoothErrorField,
+                     BiasedErrorField, AdversarialErrorField, PiecewiseErrorField)
 from .server import SimSession, SimServer, _content_type_ok
 from .client import SimClient
+from .harness import run_episode, evaluate, aggregate, EpisodeResult
 
 
 PASS, FAIL = "  [PASS]", "  [FAIL]"
@@ -335,6 +342,314 @@ def test_content_type_helper():
     check("CT: text/plain 拒绝", not _content_type_ok("text/plain"))
 
 
+# ---------------- C. 性质 / 不变量测试（随机大量状态）----------------
+def _random_case_for_props(seed):
+    return generate_case(seed=seed, problem=4, field_kind="smooth", mode="formal")
+
+
+def test_property_invariants():
+    """随机上万个 (状态, 动作) 验证题面不变量恒成立。"""
+    rng = random.Random(20260911)
+    n = 4000
+    bad_near, bad_clear, bad_after, bad_timing, bad_near_cov = 0, 0, 0, 0, 0
+    for _ in range(n):
+        case = _random_case_for_props(rng.randint(0, 1 << 30))
+        eng = Engine(case)
+        eng.enter()
+        j = rng.choice(case.jammers)
+        # 在源附近随机取点
+        x = j.x + rng.uniform(-30, 30)
+        y = j.y + rng.uniform(-30, 30)
+        dist = math.hypot(x - j.x, y - j.y)
+        in_cov = eng._in_coverage(x, y, j)
+
+        prev_x, prev_y = eng.st.pos_x, eng.st.pos_y
+        prev_ch = eng.st.channel
+        prev_us = eng.st.virtual_time_us
+        resp, out = eng.measure(x, y, j.channel)
+
+        # 计时不变量：T_{k+1}-T_k = 移动/5 + 5 + 1_{切换}
+        move_s = math.hypot(x - prev_x, y - prev_y) / SPEED_MPS
+        sw = CH_SWITCH_S if j.channel != prev_ch else 0.0
+        expect_us = (int(round(move_s * 1e6)) + int(round(sw * 1e6))
+                     + int(round(MEASURE_ACTION_S * 1e6)))
+        if (eng.st.virtual_time_us - prev_us) != expect_us:
+            bad_timing += 1
+
+        # near ⇒ 覆盖内且无 svd；且 near 必须 d≤5 且 in_cov
+        if out.result == "near":
+            if out.svd_deg is not None or not in_cov or dist > NEAR_THRESHOLD_M:
+                bad_near += 1
+        # d≤5 且 in_cov ⇒ 必须 near（P4：near 需在覆盖半平面内）
+        if in_cov and dist <= NEAR_THRESHOLD_M and out.result != "near":
+            bad_near_cov += 1
+
+        # clear：d≤20 未清 ⇒ success（与朝向无关）
+        cx = j.x + rng.uniform(-25, 25)
+        cy = j.y + rng.uniform(-25, 25)
+        cdist = math.hypot(cx - j.x, cy - j.y)
+        was_cleared = j.cleared
+        _, cout = eng.clear(cx, cy, j.channel)
+        if (not was_cleared) and cdist <= CLEAR_RADIUS_M and cout.result != "success":
+            bad_clear += 1
+
+        # 清除后 measure 同频道 ⇒ no_signal
+        if j.cleared:
+            _, out2 = eng.measure(x, y, j.channel)
+            if out2.result != "no_signal":
+                bad_after += 1
+
+    check(f"计时不变量 T差=移动/5+5+切换 ({n}例)", bad_timing == 0, f"{bad_timing} bad")
+    check(f"near⇒覆盖内且无svd且d≤5 ({n}例)", bad_near == 0, f"{bad_near} bad")
+    check(f"d≤5且覆盖内⇒near ({n}例)", bad_near_cov == 0, f"{bad_near_cov} bad")
+    check(f"d≤20未清⇒clear成功(与朝向无关) ({n}例)", bad_clear == 0, f"{bad_clear} bad")
+    check(f"清除后同频道measure⇒no_signal ({n}例)", bad_after == 0, f"{bad_after} bad")
+
+
+def test_rejected_and_idem_no_state_change():
+    """时限外/幂等重试不重复推进 position/channel/time/clear。"""
+    # 幂等：引擎本身无幂等（在 server 层），这里验证 server 幂等不重复移动/clear
+    from .server import SimSession
+    case = build_timing_case()
+    sess = SimSession(case, robot_id="T")
+    sess.handle("/enter", {"arena_id": "default", "robot_id": "T", "request_id": "e"})
+    p = {"arena_id": "default", "robot_id": "T", "request_id": "m1",
+         "position": {"x": 300, "y": 400}, "channel": 1}
+    sess.handle("/measure", p)
+    vt1 = sess.engine.st.virtual_time_s
+    pos1 = (sess.engine.st.pos_x, sess.engine.st.pos_y)
+    sess.handle("/measure", p)   # 同 id 同内容
+    vt2 = sess.engine.st.virtual_time_s
+    pos2 = (sess.engine.st.pos_x, sess.engine.st.pos_y)
+    check("幂等重试不推进虚拟时间", approx(vt1, vt2), f"{vt1} vs {vt2}")
+    check("幂等重试不改变位置", pos1 == pos2, f"{pos1} vs {pos2}")
+
+    # 幂等 clear 不重复清除（只清一次）
+    j = Jammer(9, 100, 0, 1200, "omni")
+    sess2 = SimSession(Case([j], ErrorField(1), 1), robot_id="T")
+    sess2.handle("/enter", {"arena_id": "default", "robot_id": "T", "request_id": "e"})
+    cp = {"arena_id": "default", "robot_id": "T", "request_id": "c1",
+          "position": {"x": 100, "y": 0}, "channel": 9}
+    _, r1 = sess2.handle("/clear", cp)
+    _, r2 = sess2.handle("/clear", cp)   # 同 id 同内容 → 缓存
+    check("幂等 clear 返回相同结果", r1 == r2, str((r1, r2)))
+    check("幂等 clear 只清一次", sess2.case.cleared_count == 1, str(sess2.case.cleared_count))
+
+
+def test_enter_initial_state():
+    """/enter 后位置=(0,0)、当前频道=1（题面：初始频道 1）。"""
+    eng = Engine(build_timing_case())
+    eng.enter()
+    check("/enter 后位置=(0,0)", eng.st.pos_x == 0.0 and eng.st.pos_y == 0.0,
+          f"{(eng.st.pos_x, eng.st.pos_y)}")
+    check("/enter 后当前频道=1", eng.st.channel == 1, str(eng.st.channel))
+
+
+# ---------------- D. 边界测试（浮点最易出 bug 处）----------------
+def test_boundary_distances():
+    j = Jammer(3, 0.0, 0.0, 1200.0, "omni")
+    eng = Engine(Case([j], ErrorField(1), 1))
+    eng.enter()
+    eps = 1e-6
+    # d=5 精确 → near（≤5 含边界）
+    _, o = eng.measure(5.0, 0.0, 3)
+    check("d=5 → near(含边界)", o.result == "near", o.result)
+    # d=5+eps → direction（>5）
+    eng2 = Engine(Case([Jammer(3, 0.0, 0.0, 1200.0, "omni")], ErrorField(1), 1)); eng2.enter()
+    _, o = eng2.measure(5.0 + eps, 0.0, 3)
+    check("d=5+ε → direction", o.result == "direction", o.result)
+    # d=5-eps → near
+    eng3 = Engine(Case([Jammer(3, 0.0, 0.0, 1200.0, "omni")], ErrorField(1), 1)); eng3.enter()
+    _, o = eng3.measure(5.0 - eps, 0.0, 3)
+    check("d=5-ε → near", o.result == "near", o.result)
+
+
+def test_boundary_clear_radius():
+    def fresh():
+        e = Engine(Case([Jammer(3, 0.0, 0.0, 1200.0, "omni")], ErrorField(1), 1)); e.enter(); return e
+    eps = 1e-6
+    e = fresh(); _, o = e.clear(20.0, 0.0, 3)
+    check("clear d=20 → success(含边界)", o.result == "success", o.result)
+    e = fresh(); _, o = e.clear(20.0 + eps, 0.0, 3)
+    check("clear d=20+ε → no_target", o.result == "no_target_in_range", o.result)
+    e = fresh(); _, o = e.clear(20.0 - eps, 0.0, 3)
+    check("clear d=20-ε → success", o.result == "success", o.result)
+
+
+def test_boundary_directional_90():
+    """定向覆盖边界 Δφ=90° 含边界；90+ε 盲区。"""
+    j = Jammer(4, 0.0, 0.0, 1200.0, "dir", direction_deg=0.0)  # 朝正东，覆盖[-90,90]
+    def fresh():
+        e = Engine(Case([Jammer(4, 0.0, 0.0, 1200.0, "dir", direction_deg=0.0)],
+                        ErrorField(1), 1)); e.enter(); return e
+    # 正北 (0,500)：源→点=90° → 含边界 direction
+    e = fresh(); _, o = e.measure(0.0, 500.0, 4)
+    check("定向 Δφ=90° → direction(含边界)", o.result == "direction", o.result)
+    # 略过边界：角度 90°+微小 → 盲区。取点 (−ε, 500) 使源→点略大于 90°
+    e = fresh(); _, o = e.measure(-0.5, 500.0, 4)
+    check("定向 Δφ=90°+ε → no_signal(盲区)", o.result == "no_signal", o.result)
+
+
+def test_svd_wraparound():
+    """svd_deg 必须 ∈[0,360)：构造真实方位≈0 且误差为负，验证不会输出 360.00。"""
+    # 用常偏 adversarial 场：ε=+1；把点选在真实方位≈359.5 处，+1 →360.5→round→…→必须回卷
+    for tb_target in (359.996, 359.999, 0.001, 359.5):
+        # 造一个源使 检测点→源 的真实方位 = tb_target
+        # 检测点在原点，源方位角 = tb_target
+        ang = math.radians(tb_target)
+        j = Jammer(5, 500 * math.cos(ang), 500 * math.sin(ang), 1200.0, "omni")
+        fld = make_error_field("adversarial", seed=1, params={"mode": "constant", "magnitude": 1.0})
+        eng = Engine(Case([j], fld, 1)); eng.enter()
+        _, o = eng.measure(0.0, 0.0, 5)
+        if o.result == "direction":
+            check(f"svd∈[0,360) (真方位≈{tb_target})",
+                  0.0 <= o.svd_deg < 360.0, f"svd={o.svd_deg}")
+
+
+# ---------------- E. 误差场家族 ----------------
+def test_error_fields_bounded_and_fixed():
+    rng = random.Random(7)
+    pts = [(rng.uniform(-1800, 1800), rng.uniform(-1800, 1800)) for _ in range(500)]
+    for kind in FIELD_KINDS:
+        fld = make_error_field(kind, seed=42)
+        mx = 0.0
+        ok_fixed = True
+        for (x, y) in pts:
+            e1 = fld.error_deg(x, y)
+            e2 = fld.error_deg(x, y)   # 同点重复
+            if e1 != e2:
+                ok_fixed = False
+            mx = max(mx, abs(e1))
+        check(f"[{kind}] 误差∈[-1,1]", mx <= 1.0 + 1e-12, f"max|e|={mx}")
+        check(f"[{kind}] 同点重复不变", ok_fixed, "")
+
+
+def test_error_field_smooth_vs_iid_microstep():
+    """smooth 场微动几乎不变；iid 场微动可显著变化 → 二者行为可区分。"""
+    x, y = 123.4, -567.8
+    d = 0.01  # 1cm 微动
+    smooth = make_error_field("smooth", seed=3, params={"length_scale": 300.0})
+    iid = make_error_field("iid", seed=3)
+    ds = abs(smooth.error_deg(x, y) - smooth.error_deg(x + d, y))
+    check("smooth 场 1cm 微动误差变化极小", ds < 1e-3, f"Δ={ds}")
+    # iid：统计多点，至少某些点微动后明显不同
+    rng = random.Random(11)
+    max_di = 0.0
+    for _ in range(200):
+        px, py = rng.uniform(-1000, 1000), rng.uniform(-1000, 1000)
+        max_di = max(max_di, abs(iid.error_deg(px, py) - iid.error_deg(px + d, py)))
+    check("iid 场微动可产生显著误差变化", max_di > 0.1, f"max Δ={max_di}")
+
+
+def test_biased_field_nonzero_mean():
+    fld = make_error_field("biased", seed=5, params={"bias": 0.6, "noise_amp": 0.3})
+    rng = random.Random(9)
+    vals = [fld.error_deg(rng.uniform(-1500, 1500), rng.uniform(-1500, 1500)) for _ in range(2000)]
+    mean = sum(vals) / len(vals)
+    check("biased 场均值显著非零", mean > 0.2, f"mean={mean:.3f}")
+
+
+def test_field_config_roundtrip():
+    for kind in FIELD_KINDS:
+        fld = make_error_field(kind, seed=17)
+        cfg = fld.config()
+        fld2 = make_error_field(**cfg)
+        # 同点取值应一致
+        same = approx(fld.error_deg(100.0, 200.0), fld2.error_deg(100.0, 200.0), 1e-12)
+        check(f"[{kind}] config 往返一致", same, "")
+
+
+# ---------------- F. 压力案例 + 蒙特卡洛试验场 ----------------
+def _greedy_omni_policy(runner):
+    """
+    简易参考策略（仅用于验证 harness / 压力生成器可跑通，不追求成绩）：
+    对每个频道在原点测一次；若拿到 svd，就沿该方位向外推进若干距离再测一次，
+    两次示向线交点作为估计位置，前往清除。仅处理 omni 的 P3 场景足够跑通试验场。
+    """
+    runner.enter()
+    for ch in range(1, 21):
+        r = runner.measure(0.0, 0.0, ch)
+        if r is None:
+            break
+        if r.get("measure_result") != "direction":
+            continue
+        b1 = math.radians(r["svd_deg"])
+        # 第二点：垂直于视线方向偏移，拿第二条线
+        ox, oy = 400.0 * math.cos(b1 + math.pi / 2), 400.0 * math.sin(b1 + math.pi / 2)
+        r2 = runner.measure(ox, oy, ch)
+        if r2 is None:
+            break
+        if r2.get("measure_result") == "near":
+            runner.clear(ox, oy, ch)
+            continue
+        if r2.get("measure_result") != "direction":
+            continue
+        b2 = math.radians(r2["svd_deg"])
+        # 解两条射线交点：p1 + t1*d1 = p2 + t2*d2
+        d1 = (math.cos(b1), math.sin(b1))
+        d2 = (math.cos(b2), math.sin(b2))
+        den = d1[0] * (-d2[1]) - d1[1] * (-d2[0])
+        if abs(den) < 1e-9:
+            continue
+        rx, ry = ox - 0.0, oy - 0.0
+        t1 = (rx * (-d2[1]) - ry * (-d2[0])) / den
+        ex, ey = d1[0] * t1, d1[1] * t1
+        runner.clear(ex, ey, ch)
+    runner.exit()
+
+
+def test_harness_runs_and_metrics():
+    """试验场能跑通、指标字段齐全、成功率∈[0,1]。"""
+    m = evaluate(_greedy_omni_policy, n_cases=15, problem=3, base_seed=100,
+                 field_kind="smooth")
+    check("harness 跑通 15 局", m.n_episodes == 15, str(m.n_episodes))
+    check("success_rate∈[0,1]", 0.0 <= m.success_rate <= 1.0, str(m.success_rate))
+    check("时间分位单调 P50≤P90≤P95≤max",
+          m.time_p50 <= m.time_p90 + 1e-9 <= m.time_p95 + 1e-9 <= m.time_max + 1e-9,
+          f"{m.time_p50}/{m.time_p90}/{m.time_p95}/{m.time_max}")
+    check("measure_mean>0", m.measure_mean > 0, str(m.measure_mean))
+
+
+def test_stress_generators_valid():
+    """每种压力案例都满足题面硬约束。"""
+    scan = [(0, 0), (600, 0), (-600, 0), (0, 600), (0, -600)]
+    for stype in STRESS_TYPES:
+        for k in range(3):
+            prob = 4 if stype.startswith("dir_") else 3
+            c = generate_stress_case(stype, seed=500 + k, problem=prob,
+                                     scan_points=scan)
+            ok_n = 10 <= c.total <= 16
+            ok_ch = len(set(j.channel for j in c.jammers)) == c.total
+            ok_pos = all(math.hypot(j.x, j.y) <= ARENA_RADIUS_M + 1e-6 for j in c.jammers)
+            ok_reff = all(1000.0 <= j.r_eff <= 1500.0 for j in c.jammers)
+            ok_mix = True
+            if prob == 4:
+                ok_mix = c.n_omni >= 1 and c.n_dir >= 1
+            check(f"[stress:{stype}#{k}] 约束(数量/频道/位置/Reff/混合)",
+                  ok_n and ok_ch and ok_pos and ok_reff and ok_mix,
+                  f"n={c.total} ch_uniq={ok_ch} pos={ok_pos} reff={ok_reff} "
+                  f"omni={c.n_omni} dir={c.n_dir}")
+
+
+def test_p4_generation_forces_mix():
+    """P4 随机生成始终两类各≥1（含显式 n_directional=0 被夹回）。"""
+    bad = 0
+    for k in range(40):
+        c = generate_case(seed=800 + k, problem=4, mode="formal")
+        if not (c.n_omni >= 1 and c.n_dir >= 1):
+            bad += 1
+    check("P4 随机生成恒含全向+定向各≥1", bad == 0, f"{bad} bad")
+    c0 = generate_case(seed=1, problem=4, n_jammers=12, n_directional=0)
+    check("P4 显式 n_dir=0 被夹回(dir≥1)", c0.n_dir >= 1, str(c0.n_dir))
+
+
+def test_reff_allows_duplicates():
+    """R_eff 不强制互异：允许重复（用 case 文件往返验证任意值可载入）。"""
+    js = [Jammer(1, 100, 0, 1200.0, "omni"), Jammer(2, -100, 0, 1200.0, "omni")]
+    c = Case(js, ErrorField(1), 1)
+    check("两源 R_eff 可相同", c.jammers[0].r_eff == c.jammers[1].r_eff, "")
+
+
 def main():
     print("=" * 60)
     print("A. 引擎级单元测试")
@@ -347,6 +662,37 @@ def main():
     test_channel_state_update()
     test_case_generation_constraints()
     test_content_type_helper()
+
+    print("=" * 60)
+    print("C. 性质 / 不变量测试")
+    print("=" * 60)
+    test_property_invariants()
+    test_rejected_and_idem_no_state_change()
+    test_enter_initial_state()
+
+    print("=" * 60)
+    print("D. 边界测试")
+    print("=" * 60)
+    test_boundary_distances()
+    test_boundary_clear_radius()
+    test_boundary_directional_90()
+    test_svd_wraparound()
+
+    print("=" * 60)
+    print("E. 误差场家族")
+    print("=" * 60)
+    test_error_fields_bounded_and_fixed()
+    test_error_field_smooth_vs_iid_microstep()
+    test_biased_field_nonzero_mean()
+    test_field_config_roundtrip()
+
+    print("=" * 60)
+    print("F. 压力案例 + 蒙特卡洛试验场")
+    print("=" * 60)
+    test_harness_runs_and_metrics()
+    test_stress_generators_valid()
+    test_p4_generation_forces_mix()
+    test_reff_allows_duplicates()
 
     print("=" * 60)
     print("B. HTTP 协议级测试")

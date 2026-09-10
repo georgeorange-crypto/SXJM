@@ -214,8 +214,11 @@ class Engine:
         if dist <= j.r_eff and in_cov:
             true_bearing = self._true_bearing_pt_to_src(x, y, j)
             err = self.case.field.error_deg(x, y)     # ∈[-1,1]°，按位置固定
-            svd = norm_deg(true_bearing + err)
-            return MeasureOutcome("direction", svd_deg=round(svd, 2))
+            # 先加误差归一化，round 两位后【再归一化一次】：
+            # 例如 359.996→round→360.00 不属于 [0,360)，必须再 mod 回 0.00。
+            svd = round(norm_deg(true_bearing + err), 2)
+            svd = norm_deg(svd)
+            return MeasureOutcome("direction", svd_deg=svd)
 
         # 其余：无信号（超距 / 定向盲区 / 已清）
         return MeasureOutcome("no_signal")

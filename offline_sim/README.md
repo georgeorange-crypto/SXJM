@@ -6,12 +6,46 @@
 
 | 文件 | 职责 |
 |---|---|
-| `case.py` | 案例/干扰源模型、**按位置固定**的示向度误差场、随机案例生成（满足全部约束） |
+| `case.py` | 案例/干扰源模型、随机案例生成、**压力/最坏情况**案例生成 |
+| `fields.py` | **可插拔示向度误差场家族**（iid / smooth / biased / adversarial / piecewise） |
 | `engine.py` | 纯逻辑引擎：物理判定 + 计时规则 + 状态推进（微秒累计，无 HTTP） |
 | `server.py` | HTTP+JSON 层：方法/路径/头/体校验、状态码、`accepted` 语义、`request_id` 幂等 |
+| `harness.py` | **蒙特卡洛试验场**：策略批量评估 + 统一指标（成功率 + 时间分位 + 动作计数） |
 | `client.py` | 轻量客户端（自测用，可被机器狗复用） |
 | `run.py` | 命令行启动器 |
-| `test_sim.py` | 89 项自测（引擎级 + HTTP 协议级），全部通过 |
+| `test_sim.py` | 167 项自测（单元 + 性质/不变量 + 边界 + 误差场 + 压力/试验场），全部通过 |
+
+## 定位
+
+这不是"官方模拟器的严格复刻"（官方**未公开**随机案例分布与误差场概率分布），而是：
+
+> **严格满足题面公开的物理、计时与交互约束的离线仿真环境，并提供多种随机及极端案例、多种误差场以做算法鲁棒性 / 最坏情况验证。**
+
+### 误差场家族（`fields.py`）
+
+题面只约束示向度误差：①有界 `∈[-1°,1°]`；②地点决定（同点重复不变）；③不同地点才呈统计规律——**未规定分布形状、是否零均值、是否空间独立**。故不假设唯一分布，提供 5 种都满足约束的场：
+
+- `iid` — 不同地点独立 `U[-1,1]`（会奖励"原地微动多测取平均"，用来暴露依赖此假设的策略）
+- `smooth` — 空间相关（相关长度 ℓ 可调；微动几乎测到同一误差，**默认**）
+- `biased` — 整体偏置（均值≠0）→ 打击"误差均值为 0"的最小二乘
+- `adversarial` — 误差贴近 ±1°（分块翻转 / 常偏）→ 最坏情况保证
+- `piecewise` — 分区电磁环境，每块各有相关偏差
+
+`generate_case(..., field_kind="biased", field_params={"bias":0.6})` 即可切换。
+
+### 压力 / 最坏情况案例（`case.py: generate_stress_case`）
+
+`edge_cluster / min_reff / tiny_cluster / collinear / far_pair / max_count / min_count / dir_outward / dir_boundary / dir_evasive`——专门生成"我们最怕"的布局（贴边、最小 R_eff、近共线致三角定位病态、定向源背向原点或朝向避开扫描点等）。仍严格满足题面硬约束。
+
+### 蒙特卡洛试验场（`harness.py`）
+
+```python
+from offline_sim import evaluate, evaluate_stress
+m = evaluate(my_policy, n_cases=200, problem=3, field_kind="smooth")
+print(m.report())   # 成功率 / 时间 mean·P50·P90·P95·max / 动作计数 / clear 失败数
+```
+
+指标以 **成功率 P(clear all) 优先**，再看时间分位——一个平均更快但偶尔漏源的策略未必更好。
 
 ## 启动
 
@@ -31,7 +65,7 @@ python -m offline_sim.run --robot-id <参赛队号> --case case.json
 ## 已严格落实的规则（对照文件）
 
 **物理（附件2 §2 / 附件1 §2）**
-- 有效接收半径 `R_eff∈[1000,1500]`，各源不同、接口不返回；超距 → `no_signal`。
+- 有效接收半径 `R_eff∈[1000,1500]`，接口不返回；超距 → `no_signal`。（题面未规定各源互异，允许重复）
 - 全向：距离 ≤ R_eff 即可；定向：还须检测点位于覆盖角（方向两侧各 90°，共 180°，**含边界**）内。
 - 示向度误差 ∈ `[-1°,+1°]`、保留两位小数、`[0,360)` 归一化；**由地点决定 → 同一地点重复测量误差不变**。
 - 近距 5 m 且在覆盖角内 → `near`（无 svd）；清除半径 20 m（与定向朝向无关）；同源只能清一次。
@@ -52,7 +86,7 @@ python -m offline_sim.run --robot-id <参赛队号> --case case.json
 ## 自测
 
 ```powershell
-python -m offline_sim.test_sim   # 89/89 通过
+python -m offline_sim.test_sim   # 167/167 通过
 ```
 
 ## 与真机的差异（已知、无害）

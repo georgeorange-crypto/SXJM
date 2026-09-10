@@ -30,6 +30,9 @@ def main(argv=None):
     ap.add_argument("--n-dir", type=int, default=None, help="定向源个数（仅 problem=4）")
     ap.add_argument("--mode", default="practice", choices=("practice", "formal"),
                     help="practice 演练（退出揭示真值）/ formal 正式")
+    ap.add_argument("--field", default="smooth",
+                    choices=("smooth", "iid", "biased", "adversarial", "piecewise"),
+                    help="示向度误差场类型（见 fields.py）")
     ap.add_argument("--case", default=None, help="从 JSON 案例文件加载（忽略随机参数）")
     ap.add_argument("--verbose", action="store_true", help="打印 HTTP 访问日志")
     args = ap.parse_args(argv)
@@ -41,6 +44,7 @@ def main(argv=None):
         case = generate_case(
             seed=args.seed, problem=args.problem,
             n_jammers=args.n_jammers, n_directional=args.n_dir, mode=args.mode,
+            field_kind=args.field,
         )
 
     session = SimSession(case, robot_id=args.robot_id)

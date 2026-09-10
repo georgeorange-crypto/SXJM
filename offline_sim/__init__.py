@@ -14,11 +14,25 @@ offline_sim —— 无线电干扰源模拟器的本地离线复现。
   run.py     命令行启动器
 """
 
-from .case import Case, Jammer, ErrorField, generate_case
+from .case import Case, Jammer, ErrorField, generate_case, generate_stress_case, STRESS_TYPES
+from .fields import (
+    make_error_field, FIELD_KINDS,
+    SmoothErrorField, IIDErrorField, BiasedErrorField,
+    AdversarialErrorField, PiecewiseErrorField,
+)
 from .engine import Engine
 from .server import SimServer, SimSession, serve
+from .harness import (
+    EpisodeRunner, EpisodeResult, Metrics,
+    run_episode, aggregate, evaluate, evaluate_stress,
+)
 
 __all__ = [
-    "Case", "Jammer", "ErrorField", "generate_case",
+    "Case", "Jammer", "ErrorField", "generate_case", "generate_stress_case", "STRESS_TYPES",
+    "make_error_field", "FIELD_KINDS",
+    "SmoothErrorField", "IIDErrorField", "BiasedErrorField",
+    "AdversarialErrorField", "PiecewiseErrorField",
     "Engine", "SimServer", "SimSession", "serve",
+    "EpisodeRunner", "EpisodeResult", "Metrics",
+    "run_episode", "aggregate", "evaluate", "evaluate_stress",
 ]
