@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 
-from . import report
+from . import diagnostics, report
 from .directional import directional_cost, format_directional
 from .runner import ALL_METHODS, run_all
 
@@ -61,10 +61,22 @@ def main(argv=None) -> int:
     print("---- 计时分解（成功局均值，秒）----")
     print(report.stacked_breakdown_table(summaries))
 
+    print("\n---- 逐动作实际耗时（成功局均值，秒）----")
+    print(diagnostics.action_time_table(summaries))
+    print("\n---- 逐动作可优化余量 Δ=实际-物理地板（成功局均值，秒）----")
+    print(diagnostics.headroom_table(summaries))
+    print("\n---- 动作次数（诊断超支来源）----")
+    print(diagnostics.action_count_table(summaries))
+    print()
+    print(diagnostics.format_diagnosis(summaries, problem=args.problem))
+
     if not args.no_fig:
         out = os.path.join(_out_dir(), f"breakdown_p{args.problem}.png")
         path = report.make_figure(summaries, out, problem=args.problem)
+        out2 = os.path.join(_out_dir(), f"headroom_p{args.problem}.png")
+        path2 = diagnostics.make_action_figure(summaries, out2, problem=args.problem)
         print(f"\n主图: {path if path else '（matplotlib 不可用，已跳过）'}")
+        print(f"余量图: {path2 if path2 else '（matplotlib 不可用，已跳过）'}")
     return 0
 
 
