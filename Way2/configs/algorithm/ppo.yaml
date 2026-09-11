@@ -42,19 +42,26 @@ ppo:
   epochs: 4
   minibatch_size: 256
   vf_coef: 0.5
-  ent_coef: 0.01
+  ent_coef: 0.02              # bumped from 0.01: keep exploration alive vs collapse
   max_grad_norm: 0.5
   gamma: 0.99
   gae_lambda: 0.95
   normalize_adv: true
 
 # Reward shaping for the task objective (minimise task time, clear every source).
+# Rebalanced after a baseline run collapsed to "exit on step 1": clearing is made
+# more salient, wasted clears cheaper (so the agent dares to attempt them), an
+# exit_penalty makes abandoning the field with sources live worse than doing
+# nothing, and potential-based shaping (shaping_coef) pays a dense, policy-
+# invariant reward for localisation progress. See training/rollout.py.
 reward:
   time_coef: 1.0
   time_scale: 1000.0
-  clear_success_bonus: 1.0
-  clear_fail_penalty: 0.5
-  success_bonus: 5.0
+  clear_success_bonus: 3.0
+  clear_fail_penalty: 0.3
+  success_bonus: 10.0
+  exit_penalty: 2.0
+  shaping_coef: 1.5
 
 # Training loop.
 train:
