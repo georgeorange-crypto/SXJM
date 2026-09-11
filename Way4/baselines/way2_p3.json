@@ -1,0 +1,149 @@
+{
+  "stack": "way2",
+  "problem": 3,
+  "generated_utc": "2026-09-11T11:15:55+00:00",
+  "seeds": [
+    1000,
+    1001,
+    1002,
+    1003,
+    1004,
+    1005,
+    1006,
+    1007,
+    1008,
+    1009
+  ],
+  "switch_tracked": true,
+  "field_kind": null,
+  "episodes": [
+    {
+      "seed": 1000,
+      "success": true,
+      "time": 10425.826128,
+      "move": 48679.13063015597,
+      "measure": 105,
+      "switch": 85,
+      "cleared": 16,
+      "total": 16,
+      "error": null
+    },
+    {
+      "seed": 1001,
+      "success": true,
+      "time": 9989.043807,
+      "move": 46885.219024961974,
+      "measure": 92,
+      "switch": 72,
+      "cleared": 16,
+      "total": 16,
+      "error": null
+    },
+    {
+      "seed": 1002,
+      "success": true,
+      "time": 8294.16308,
+      "move": 38485.81541987768,
+      "measure": 91,
+      "switch": 72,
+      "cleared": 14,
+      "total": 14,
+      "error": null
+    },
+    {
+      "seed": 1003,
+      "success": true,
+      "time": 10342.362866,
+      "move": 48426.81432324486,
+      "measure": 101,
+      "switch": 87,
+      "cleared": 13,
+      "total": 13,
+      "error": null
+    },
+    {
+      "seed": 1004,
+      "success": true,
+      "time": 9907.934202,
+      "move": 46149.67101725457,
+      "measure": 105,
+      "switch": 88,
+      "cleared": 13,
+      "total": 13,
+      "error": null
+    },
+    {
+      "seed": 1005,
+      "success": true,
+      "time": 9042.192206,
+      "move": 41735.961026017445,
+      "measure": 107,
+      "switch": 95,
+      "cleared": 13,
+      "total": 13,
+      "error": null
+    },
+    {
+      "seed": 1006,
+      "success": true,
+      "time": 10122.758313,
+      "move": 47063.79155032872,
+      "measure": 110,
+      "switch": 100,
+      "cleared": 12,
+      "total": 12,
+      "error": null
+    },
+    {
+      "seed": 1007,
+      "success": false,
+      "time": 9858.895891,
+      "move": 45664.47947560596,
+      "measure": 112,
+      "switch": 91,
+      "cleared": 15,
+      "total": 16,
+      "error": null
+    },
+    {
+      "seed": 1008,
+      "success": true,
+      "time": 8998.533449,
+      "move": 41597.6672388252,
+      "measure": 104,
+      "switch": 89,
+      "cleared": 14,
+      "total": 14,
+      "error": null
+    },
+    {
+      "seed": 1009,
+      "success": false,
+      "time": 9767.675206,
+      "move": 45758.37600926514,
+      "measure": 96,
+      "switch": 86,
+      "cleared": 10,
+      "total": 11,
+      "error": null
+    }
+  ],
+  "aggregates": {
+    "n_episodes": 10,
+    "n_evaluated": 10,
+    "n_errors": 0,
+    "n_success": 8,
+    "clear_success_rate": 0.8,
+    "sources_cleared": 136,
+    "sources_total": 138,
+    "time_mean": 9674.9385148,
+    "time_p50": 9883.4150465,
+    "time_p90": 10350.7091922,
+    "time_p95": 10388.267660099998,
+    "time_max": 10425.826128,
+    "move_mean": 45044.69257155375,
+    "measure_mean": 102.3,
+    "switch_mean": 86.5,
+    "switch_tracked": true
+  }
+}

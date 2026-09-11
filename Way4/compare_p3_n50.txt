@@ -1,0 +1,10 @@
+﻿== Way3 vs Way4  |  problem=3  n=50  field=smooth  seeds=[1000..1049] ==
+
+  seed= 1000 tot=16 way3[clr=16 OK t= 6442.8] way4[clr=16 OK t= 6005.6 steps=38]
+  seed= 1001 tot=16 way3[clr=16 OK t= 5727.0] way4[clr=16 OK t= 5955.9 steps=38]
+  seed= 1002 tot=14 way3[clr=14 OK t= 4436.2] way4[clr=14 OK t= 5496.5 steps=30]
+  seed= 1003 tot=13 way3[clr=13 OK t= 4917.7] way4[clr=13 OK t= 4976.6 steps=29]
+  seed= 1004 tot=13 way3[clr=13 OK t= 4522.7] way4[clr=13 OK t= 6059.8 steps=32]
+  seed= 1005 tot=13 way3[clr=13 OK t= 5201.3] way4[clr=13 OK t= 5093.3 steps=28]
+           way4 error: no_candidate
+  seed= 1006 tot=12 way3[clr=12 OK t= 5640.2] way4[clr=12 OK t= 5487.6 steps=31]

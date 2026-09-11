@@ -1,0 +1,125 @@
+{
+  "stack": "way2",
+  "problem": 4,
+  "generated_utc": "2026-09-11T11:15:55+00:00",
+  "seeds": [
+    2000,
+    2001,
+    2002,
+    2003,
+    2004,
+    2005,
+    2006,
+    2007
+  ],
+  "switch_tracked": true,
+  "field_kind": null,
+  "episodes": [
+    {
+      "seed": 2000,
+      "success": false,
+      "time": 360000.0,
+      "move": 0.0,
+      "measure": 72001,
+      "switch": 0,
+      "cleared": 0,
+      "total": 13,
+      "error": null
+    },
+    {
+      "seed": 2001,
+      "success": false,
+      "time": 360000.0,
+      "move": 0.0,
+      "measure": 72001,
+      "switch": 0,
+      "cleared": 0,
+      "total": 14,
+      "error": null
+    },
+    {
+      "seed": 2002,
+      "success": false,
+      "time": 360000.0,
+      "move": 0.0,
+      "measure": 72001,
+      "switch": 0,
+      "cleared": 0,
+      "total": 15,
+      "error": null
+    },
+    {
+      "seed": 2003,
+      "success": false,
+      "time": 360000.0,
+      "move": 0.0,
+      "measure": 72001,
+      "switch": 0,
+      "cleared": 0,
+      "total": 10,
+      "error": null
+    },
+    {
+      "seed": 2004,
+      "success": false,
+      "time": 360000.0,
+      "move": 0.0,
+      "measure": 72001,
+      "switch": 0,
+      "cleared": 0,
+      "total": 14,
+      "error": null
+    },
+    {
+      "seed": 2005,
+      "success": false,
+      "time": 360003.0,
+      "move": 0.0,
+      "measure": 72001,
+      "switch": 3,
+      "cleared": 0,
+      "total": 13,
+      "error": null
+    },
+    {
+      "seed": 2006,
+      "success": false,
+      "time": 360000.0,
+      "move": 0.0,
+      "measure": 72001,
+      "switch": 0,
+      "cleared": 0,
+      "total": 14,
+      "error": null
+    },
+    {
+      "seed": 2007,
+      "success": false,
+      "time": 360000.0,
+      "move": 0.0,
+      "measure": 72001,
+      "switch": 0,
+      "cleared": 0,
+      "total": 11,
+      "error": null
+    }
+  ],
+  "aggregates": {
+    "n_episodes": 8,
+    "n_evaluated": 8,
+    "n_errors": 0,
+    "n_success": 0,
+    "clear_success_rate": 0.0,
+    "sources_cleared": 0,
+    "sources_total": 104,
+    "time_mean": 360000.375,
+    "time_p50": 360000.0,
+    "time_p90": 360000.9,
+    "time_p95": 360001.95,
+    "time_max": 360003.0,
+    "move_mean": 0.0,
+    "measure_mean": 72001.0,
+    "switch_mean": 0.375,
+    "switch_tracked": true
+  }
+}
