@@ -66,6 +66,7 @@ class Registry(Generic[T]):
 
 # --- One registry per pluggable category ----------------------------------
 ALGORITHMS: Registry = Registry("algorithm")
+FEATURE_BUILDERS: Registry = Registry("feature_builder")
 CHANNEL_ENCODERS: Registry = Registry("channel_encoder")
 SPATIAL_ENCODERS: Registry = Registry("spatial_encoder")
 GRAPH_ENCODERS: Registry = Registry("graph_encoder")

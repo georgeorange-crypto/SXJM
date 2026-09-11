@@ -1,0 +1,68 @@
+# PPO + pointer-actor policy over the candidate set (Milestone 2, the default
+# learnable path). Swap it in without touching code:
+#   python -m radio_rl.scripts.train algorithm=ppo
+#
+# Everything the learnable stack needs is self-contained under this node, because
+# the pipeline builds the agent from the `algorithm` node alone. The agent owns
+# the FeatureSpec (below) and hands the pipeline a matching feature builder.
+#
+# The three model sub-blocks are the swap points. PPO+MLP becomes, say,
+# PPO+Transformer+LSTM by changing one line each (once those plugins land in a
+# later milestone); an unknown name raises a clear error and never silently
+# degrades. Value overrides work too, e.g. `algorithm.model.hidden_dim=256`.
+type: ppo
+device: ${device}            # inherits the root device (cpu by default)
+deterministic_eval: true     # argmax at eval/inference; sampling during rollouts
+checkpoint: null             # path to load pretrained weights (null = fresh)
+
+# Feature scales (shapes are fixed in code; only these are tunable).
+features:
+  pos_scale: 1800.0
+  time_scale: 10000.0
+  max_scans: 30.0
+  count_scale: 50.0
+
+# Network architecture. encoder/memory/fusion select registered plugins by name.
+model:
+  hidden_dim: 128
+  encoder:
+    type: channel_mlp        # -> channel_transformer / channel_cnn / channel_gnn later
+    layers: 2
+    layernorm: true
+  memory:
+    type: none               # -> lstm / gru / mamba later (stateful)
+  fusion:
+    type: concat             # -> gated / attention later
+    layernorm: true
+
+# PPO optimisation.
+ppo:
+  lr: 3.0e-4
+  clip_eps: 0.2
+  epochs: 4
+  minibatch_size: 256
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  normalize_adv: true
+
+# Reward shaping for the task objective (minimise task time, clear every source).
+reward:
+  time_coef: 1.0
+  time_scale: 1000.0
+  clear_success_bonus: 1.0
+  clear_fail_penalty: 0.5
+  success_bonus: 5.0
+
+# Training loop.
+train:
+  iterations: 200
+  episodes_per_iter: 8
+  max_steps: 2000
+  seed: ${seed}
+  log_every: 1
+  eval_every: 20
+  eval_episodes: 5
+  checkpoint: runs/ppo/model.pt

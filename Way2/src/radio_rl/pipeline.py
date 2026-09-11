@@ -84,10 +84,17 @@ class Pipeline:
         self.feature_builder = feature_builder  # built lazily by learnable path
 
         if getattr(self.agent, "needs_features", False) and self.feature_builder is None:
-            raise RuntimeError(
-                f"agent {type(self.agent).__name__} needs a FeatureBuilder but none "
-                "was provided (the features layer is a later milestone)."
-            )
+            # The learnable agent owns the FeatureSpec, so it supplies a matching
+            # feature builder. This is the pipeline's only tie to the tensor stack
+            # and it stays lazy: math agents never reach this branch.
+            make = getattr(self.agent, "make_feature_builder", None)
+            if make is not None:
+                self.feature_builder = make()
+            else:
+                raise RuntimeError(
+                    f"agent {type(self.agent).__name__} needs a FeatureBuilder but "
+                    "none was provided and it exposes no make_feature_builder()."
+                )
 
     def new_belief(self) -> BeliefState:
         return BeliefState(cfg=self.estimator_cfg, problem=self.problem)
