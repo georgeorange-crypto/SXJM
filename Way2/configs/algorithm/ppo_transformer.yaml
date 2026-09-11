@@ -1,0 +1,68 @@
+# PPO with the advanced model stack: Channel Transformer + LSTM + gated fusion.
+# Loadable exactly like the default, with no code change:
+#   python -m radio_rl.scripts.train algorithm=ppo_transformer
+#
+# This is the whole point of the frozen 3-swap-point architecture: this file is a
+# copy of ppo.yaml with only the three `model` sub-blocks changed. The encoder
+# attends across channels, an LSTM threads state across the episode's steps, and a
+# gated fusion learns how much of each context part to use — every other box
+# (pointer actor, critic, PPO update, feature builder) is byte-for-byte the same.
+# Unknown plugin names raise a clear KeyError; they never silently degrade.
+type: ppo
+device: ${device}
+deterministic_eval: true
+checkpoint: null
+
+# Feature scales (shapes are fixed in code; only these are tunable).
+features:
+  pos_scale: 1800.0
+  time_scale: 10000.0
+  max_scans: 30.0
+  count_scale: 50.0
+
+# Network architecture — the three swap points, all changed from the default.
+model:
+  hidden_dim: 128
+  encoder:
+    type: channel_transformer   # was channel_mlp: multi-head attention across channels
+    num_layers: 2
+    num_heads: 4
+    num_channels: 20            # sizes the learnable per-channel positional embedding
+    dropout: 0.0                # 0 keeps eval deterministic
+  memory:
+    type: lstm                  # was none: threads (h, c) across the episode's steps
+  fusion:
+    type: gated                 # was concat: learned per-part gates on the context
+    layernorm: true
+
+# PPO optimisation (identical to the default).
+ppo:
+  lr: 3.0e-4
+  clip_eps: 0.2
+  epochs: 4
+  minibatch_size: 256
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  gamma: 0.99
+  gae_lambda: 0.95
+  normalize_adv: true
+
+# Reward shaping (identical to the default).
+reward:
+  time_coef: 1.0
+  time_scale: 1000.0
+  clear_success_bonus: 1.0
+  clear_fail_penalty: 0.5
+  success_bonus: 5.0
+
+# Training loop (identical to the default).
+train:
+  iterations: 200
+  episodes_per_iter: 8
+  max_steps: 2000
+  seed: ${seed}
+  log_every: 1
+  eval_every: 20
+  eval_episodes: 5
+  checkpoint: runs/ppo_transformer/model.pt
