@@ -90,6 +90,29 @@ def wedge_halfplanes(sx: float, sy: float, svd_deg: float,
     return [hp_lo, hp_hi]
 
 
+def circle_outer_halfplanes(cx: float, cy: float, radius: float,
+                            sides: int = 128) -> list[Halfplane]:
+    """
+    圆 {‖P−C‖ ≤ radius} 的**外切**多边形（circumscribed）对应的半平面组。
+
+    每个半平面的边界是圆在角 a 处的切线，法向 (cos a, sin a)：
+        cos a·x + sin a·y ≤ radius + cx·cos a + cy·sin a
+    这些切线半平面之交是一个 sides 边的多边形，**包含**该圆（顶点在半径
+    radius/cos(π/sides) 处，向外多出约 radius·(sec(π/sides)−1)）。
+
+    "外近似"是刻意的：用它裁剪不确定集时得到的是**超集**，据此算出的最坏直径、
+    可行域是**保证成立的上界/充分条件**（宁可保守，不可漏掉真解）。
+    cx=cy=0 时退化为 Halfplane(cos a, sin a, radius)，与 halfplane_intersection
+    里对原点圆的裁剪完全一致。
+    """
+    hps: list[Halfplane] = []
+    for k in range(sides):
+        a = 2.0 * math.pi * k / sides
+        ca, sa = math.cos(a), math.sin(a)
+        hps.append(Halfplane(ca, sa, radius + cx * ca + cy * sa))
+    return hps
+
+
 def _clip_polygon(poly: list[tuple[float, float]], hp: Halfplane,
                   eps: float = 1e-9) -> list[tuple[float, float]]:
     """用一个半平面裁剪凸多边形（Sutherland–Hodgman）。"""
@@ -151,6 +174,21 @@ def halfplane_intersection(halfplanes: list[Halfplane],
     return _dedup(poly)
 
 
+def clip_polygon_halfplanes(poly: list[tuple[float, float]],
+                            halfplanes: list[Halfplane],
+                            eps: float = 1e-9) -> list[tuple[float, float]]:
+    """
+    用若干半平面依次裁剪一个**已有**凸多边形（区别于 halfplane_intersection：
+    后者从一个大正方形开始）。用于把不确定集 Ω₁ 再与第二楔形 W₂ 求交得到 Ω₂。
+    返回裁剪后的凸多边形顶点；为空表示交集为空。
+    """
+    for hp in halfplanes:
+        poly = _clip_polygon(poly, hp, eps)
+        if not poly:
+            return []
+    return _dedup(poly)
+
+
 def _dedup(poly: list[tuple[float, float]], eps: float = 1e-7) -> list[tuple[float, float]]:
     """去掉相邻重复点。"""
     if not poly:
@@ -204,6 +242,41 @@ def polygon_diameter(poly: list[tuple[float, float]]
             if d > best:
                 best, ba, bb = d, poly[i], poly[j]
     return best, ba, bb
+
+
+def angular_span_from_point(poly: list[tuple[float, float]],
+                            sx: float, sy: float) -> tuple[float, float]:
+    """
+    凸多边形 poly 从外部观察点 (sx,sy) 看过去所张的**角度区间**（度）。
+
+    返回 (lo, hi)，hi = lo + span，span ∈ [0,360]，hi 可能 > 360（调用方对楔形
+    方向自行 norm_deg）。做法：把各顶点相对 (sx,sy) 的方位角排序，找最大空隙，
+    覆盖弧 = 全圆减去最大空隙。若 (sx,sy) 落在 poly 内部（无有效空隙），返回整圈。
+
+    用途：第二检测点 S2 处，源方向 arg(G−S2) 随 G∈Ω₁ 只在这个区间内变化，
+    因此 J(S2) 的最坏情形只需在 [lo−δ, hi+δ] 这个一维角度范围里扫描 φ。
+    """
+    if not poly:
+        return (0.0, 0.0)
+    angs = sorted(norm_deg(rad2deg(math.atan2(y - sy, x - sx))) for (x, y) in poly)
+    n = len(angs)
+    if n == 1:
+        return (angs[0], angs[0])
+    gaps = [(angs[i + 1] - angs[i], i) for i in range(n - 1)]
+    gaps.append((angs[0] + 360.0 - angs[n - 1], n - 1))   # 首尾环绕空隙
+    max_gap, gi = max(gaps)
+    lo = angs[(gi + 1) % n]
+    span = 360.0 - max_gap
+    return (lo, lo + span)
+
+
+def farthest_vertex_distance(poly: list[tuple[float, float]],
+                             x: float, y: float) -> float:
+    """点 (x,y) 到凸多边形顶点的最大距离。因 ‖·−(x,y)‖ 在凸集上取最大值必在顶点，
+    这就等于 max_{G∈poly}‖G−(x,y)‖，用于判定"保证接收域"成员：≤ ρ_acc。"""
+    if not poly:
+        return 0.0
+    return max(math.hypot(vx - x, vy - y) for (vx, vy) in poly)
 
 
 def diameter_circle_covers(poly: list[tuple[float, float]],

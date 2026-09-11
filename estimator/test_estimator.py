@@ -20,6 +20,8 @@ from .problem1 import locate_region, solve_problem1, LocateResult
 from .problem2 import (
     localization_length_L, crossing_angle, second_point_candidates,
     recommend_second_point, region_diameter_two_points,
+    first_feasible_set, reception_guaranteed, worst_case_clearance_radius,
+    minimax_second_point, analytic_second_point_tokekar, P2Status,
 )
 
 _PASS = 0
@@ -260,6 +262,125 @@ def test_p2_candidates_in_arena():
           "候选点都在区域圆内")
 
 
+# ---------------- D. 问题2 第2层：Minimax NBV ----------------
+def _omega1_dense_samples(poly, k=12):
+    """凸多边形 Ω₁ 的稠密采样（顶点 + 边上等分 + 向形心的收缩），用于暴力校核。"""
+    n = len(poly)
+    if n == 0:
+        return []
+    samples = list(poly)
+    for i in range(n):
+        ax, ay = poly[i]
+        bx, by = poly[(i + 1) % n]
+        for t in range(1, k):
+            f = t / k
+            samples.append((ax + (bx - ax) * f, ay + (by - ay) * f))
+    cx = sum(p[0] for p in poly) / n
+    cy = sum(p[1] for p in poly) / n
+    for (x, y) in list(samples):
+        for f in (0.25, 0.5, 0.75):
+            samples.append((cx + (x - cx) * f, cy + (y - cy) * f))
+    return samples
+
+
+def _brute_reception(s2, s1, poly, recv_min=1000.0, tol=1e-6):
+    """暴力判定：所有采样 G 都满足 ‖S2−G‖ ≤ max(recv_min, ‖G−S1‖)。"""
+    for (gx, gy) in _omega1_dense_samples(poly):
+        d = math.hypot(s2[0] - gx, s2[1] - gy)
+        if d > max(recv_min, math.hypot(gx - s1[0], gy - s1[1])) + tol:
+            return False
+    return True
+
+
+def test_p2_first_feasible_set_contains_consistent_sources():
+    """Ω₁（外切多边形超集）必须包含所有与首次示向度相容的可能源。"""
+    S1 = (0.0, 0.0)
+    svd1 = 90.0
+    om = first_feasible_set(S1, svd1)
+    check(not om.empty and len(om.poly) >= 3, "Ω₁ 非空且为多边形")
+    check(om.r_max <= 1500.0 / math.cos(math.pi / 128) + 1.0,
+          f"r_max ≤ 1500(+外切余量), got {om.r_max:.2f}")
+    check(om.mec_radius <= om.r_max + 1e-6, "MEC(Ω₁) 半径 ≤ r_max")
+    rng = random.Random(5)
+    ok = 0
+    tot = 0
+    for _ in range(1500):
+        err = rng.uniform(-1.0, 1.0)
+        r1 = rng.uniform(10.0, 1490.0)
+        ux, uy = dir_vec(norm_deg(svd1 + err))
+        P = (S1[0] + ux * r1, S1[1] + uy * r1)
+        tot += 1
+        if _point_in_poly(om.poly, P[0], P[1], eps=1e-3):
+            ok += 1
+    check(ok == tot, f"相容源都在 Ω₁ 内（外近似超集）：{ok}/{tot}")
+
+
+def test_p2_reception_guaranteed_exact():
+    """精确 reception_guaranteed 判据 vs 暴力采样：认证必须是充分的。"""
+    S1 = (1700.0, 0.0)
+    om = first_feasible_set(S1, 90.0)
+    check(reception_guaranteed(S1, om), "S1 恒在保证接收域 𝒞_recv 内")
+    rng = random.Random(3)
+    sound = True
+    agree = 0
+    tot = 0
+    for _ in range(400):
+        s2 = (rng.uniform(S1[0] - 1200, S1[0] + 1200), rng.uniform(-1200, 1200))
+        ex = reception_guaranteed(s2, om)
+        br = _brute_reception(s2, S1, om.poly)
+        if ex and not br:            # 认证可行却被暴力发现违反 → 不安全，绝不允许
+            sound = False
+        tot += 1
+        if ex == br:
+            agree += 1
+    check(sound, "reception_guaranteed 可行认证充分（exact ⇒ brute）")
+    check(agree >= int(0.95 * tot), f"exact 与 brute 判定基本一致：{agree}/{tot}")
+
+
+def test_p2_worst_case_clearance_bounded_by_mec():
+    """J(S2)=最坏 MEC(Ω₂) 半径，因 Ω₂⊆Ω₁ 必落在 [0, MEC(Ω₁)]。"""
+    om = first_feasible_set((0.0, 0.0), 90.0)
+    rng = random.Random(9)
+    ok = True
+    for _ in range(30):
+        s2 = (rng.uniform(-1500, 1500), rng.uniform(-1500, 1500))
+        J, _phi, _poly = worst_case_clearance_radius(s2, om, phi_step_deg=1.0, refine=False)
+        if not (0.0 <= J <= om.mec_radius + 1e-6):
+            ok = False
+            break
+    check(ok, "J(S2) ∈ [0, MEC(Ω₁)]")
+
+
+def test_p2_minimax_near_vs_far():
+    """远源(r 可达 1500)不可一次清除；近源(受竞技场裁剪)可一次清除。"""
+    far = minimax_second_point((0.0, 0.0), 90.0, grid_n=11)
+    near = minimax_second_point((1700.0, 0.0), 90.0, grid_n=11)
+    for rec, name in ((far, "far"), (near, "near")):
+        check(rec.status == P2Status.OK and rec.feasible, f"{name}: status OK 且可行")
+        check(rec.j_star <= rec.rho_star + 1e-6, f"{name}: J* ≤ ρ*(Ω₁)")
+        check(reception_guaranteed(rec.s2_star, rec.omega1), f"{name}: S2* ∈ 𝒞_recv")
+        check((rec.j_star <= rec.clear_radius + 1e-6) == rec.clearable_one_move,
+              f"{name}: clearable_one_move 与 J*≤20 一致")
+    check(near.j_star < far.j_star,
+          f"近源 J* 更小: near={near.j_star:.1f} far={far.j_star:.1f}")
+    check(near.clearable_one_move and len(near.clearable_region) > 0,
+          "近源存在一次清除区 𝒞_clear")
+    check(not far.clearable_one_move, "远源无法保证一次清除（需三次测向）")
+    check(all(p in near.reception_region for p in near.clearable_region),
+          "𝒞_clear ⊆ 𝒞_recv")
+
+
+def test_p2_analytic_reference_formula():
+    """Tokekar 解析参考点 S_ana = S1 + mid·u ± half·n 的坐标公式。"""
+    S1 = (100.0, -50.0)
+    Sp = analytic_second_point_tokekar(S1, 90.0, 100.0, 500.0, +1)  # u=(0,1) n=(-1,0)
+    Sm = analytic_second_point_tokekar(S1, 90.0, 100.0, 500.0, -1)  # mid=300 half=200
+    check(approx(Sp[0], S1[0] - 200.0, 1e-6) and approx(Sp[1], S1[1] + 300.0, 1e-6),
+          f"S_ana+ 公式, got {Sp}")
+    check(approx(Sm[0], S1[0] + 200.0, 1e-6) and approx(Sm[1], S1[1] + 300.0, 1e-6),
+          f"S_ana- 公式, got {Sm}")
+
+
 def main():
     tests = [
         test_geometry_basics, test_wedge_contains,
@@ -269,6 +390,10 @@ def main():
         test_p1_empty_on_contradiction, test_p1_solve_zero_error,
         test_p2_L_min_at_90, test_p2_L_monotone_in_r2, test_p2_crossing_angle,
         test_p2_first_order_matches_geometry, test_p2_candidates_in_arena,
+        test_p2_first_feasible_set_contains_consistent_sources,
+        test_p2_reception_guaranteed_exact,
+        test_p2_worst_case_clearance_bounded_by_mec,
+        test_p2_minimax_near_vs_far, test_p2_analytic_reference_formula,
     ]
     print(f"estimator 自测：{len(tests)} 组")
     for t in tests:
