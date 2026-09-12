@@ -238,6 +238,16 @@ class MinimaxNBV:
     def travel_time(self, robot_pos: Point, q: Point) -> float:
         return dist(robot_pos, q) / self.speed + self.measure_s
 
+    @staticmethod
+    def _planning_diameter(channel, poly) -> float:
+        """Use effective geometry for ranking, with a legacy fallback."""
+        effective = getattr(channel, "effective_diameter", None)
+        if effective is not None:
+            value = float(effective(spacing=60.0))
+            if value > 1e-9:
+                return value
+        return polygon_diameter(poly)
+
     # -- top-level choice ---------------------------------------------------
 
     def choose(self, channel, robot_pos: Point) -> Optional[NBVResult]:
@@ -247,7 +257,7 @@ class MinimaxNBV:
         poly = channel.F_c
         if not poly or len(poly) < 3:
             return None
-        current = polygon_diameter(poly)
+        current = self._planning_diameter(channel, poly)
         effective_sampler = getattr(channel, "sample_effective_hypotheses", None)
         hyps = effective_sampler(limit=self.n_hypotheses, spacing=60.0) if effective_sampler else []
         # Keep the analytic polygon representative fallback for legacy duck-typed
@@ -304,7 +314,7 @@ class MinimaxNBV:
         poly = channel.F_c
         if not poly:
             return None
-        current = polygon_diameter(poly)
+        current = self._planning_diameter(channel, poly)
         hyps = channel.sample_effective_hypotheses(self.n_hypotheses, 60.0) \
             if hasattr(channel, "sample_effective_hypotheses") else self.representative_hypotheses(poly)
         best = None

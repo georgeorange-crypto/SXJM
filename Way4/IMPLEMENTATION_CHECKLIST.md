@@ -15,7 +15,7 @@
 | 状态 | ID | 证据与结论 |
 |---|---|---|
 | [x] | P0-000 | 已创建 Git freeze commits `399d6ad`、`8f09be4`、`25f9020`；`FREEZE_MANIFEST.md` 与 `results/way4_source_fingerprint.json` 记录权威源码根、环境、逐文件 SHA-256 和 tree fingerprint。 |
-| [~] | P0-001 | 已有统一 effective 查询、`EffectiveRegion`、保守栅格面积/直径/采样；NBV 已用 effective hypotheses，scheduler refine proxy 现也优先用 effective hypothesis centroid（无 native sampler 才 fallback 到 `F_c`），并有 soundness/5 项 targeted regression。仍需审计所有 legacy duck-typed consumers，故保持 partial。 |
+| [~] | P0-001 | 已有统一 effective 查询、`EffectiveRegion`、保守栅格面积/直径/采样；NBV 的 hypotheses 与 planning diameter、scheduler refine proxy 均优先使用 effective geometry（无 native sampler 才 fallback 到 `F_c`），相关 soundness/NBV/scheduler targeted regression 5 passed。仍需审计所有 legacy duck-typed consumers，故保持 partial。 |
 | [x] | P0-002 | `record_no_signal()` 立即更新 exclusion；NBV/native hypothesis sampling 使用 effective samples，安全几何仍明确使用 outer `F_c`，避免把近似域误作 certificate。 |
 | [x] | P0-003 | 已新增 `EffectiveRegion` 显式保守栅格表示，支持 holes/multiplicity 的连通分量统计，并与安全 outer `F_c` 分层。 |
 | [x] | P0-004 | `CardinalityState` 计算并传播 `p,z,u,q_min,q_max`；pipeline 每轮执行 cardinality closure，并将 `q_min == unknown` 的未知频道转为 `PRESENT_UNOBSERVED`。 |
