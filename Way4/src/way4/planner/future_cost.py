@@ -156,6 +156,7 @@ class FutureCostEstimator:
         w_exploration: float = 1.0,
         w_certificate: float = 1.0,
         max_cover_holes: int = 500,
+        joint_route: bool = False,
     ) -> None:
         self.route = route or RouteEstimator(speed=speed)
         self.loc = loc_model or LocalizationCostModel()
@@ -168,10 +169,19 @@ class FutureCostEstimator:
         self.w_exploration = float(w_exploration)
         self.w_certificate = float(w_certificate)
         self.max_cover_holes = int(max_cover_holes)
+        # P0 #4/#7 (planner=spatial): score remaining work as ONE unified route
+        # instead of four independent additive sub-tours. Default OFF -> the legacy
+        # additive estimate is byte-identical (full-clear provably unchanged).
+        self.joint_route = bool(joint_route)
 
     # -- top level ----------------------------------------------------------
 
     def estimate(self, view: CostView) -> FutureCost:
+        if self.joint_route:
+            return self._estimate_joint(view)
+        return self._estimate_additive(view)
+
+    def _estimate_additive(self, view: CostView) -> FutureCost:
         j_route = self._j_route(view)
         j_loc = self._j_localization(view)
         j_cert, n_stops = self._j_certificate(view)
@@ -183,6 +193,66 @@ class FutureCostEstimator:
             + self.w_certificate * j_cert
         )
         return FutureCost(j_route, j_loc, j_expl, j_cert, total, n_stops)
+
+    # -- joint route (P0 #4/#7, planner=spatial) ---------------------------
+
+    def _estimate_joint(self, view: CostView) -> FutureCost:
+        """One *unified* open route over every remaining task — clearables, DETECTED
+        region approaches, and the certificate cover stops — instead of the three
+        independent start-rooted tours the additive estimate sums. Co-located work
+        then pays its travel ONCE (the additive sum re-pays the trip out from ``pos``
+        for each sub-tour), so a spatially-bundled plan (a ``SpatialStop``) is finally
+        scored as the saving it is rather than as three separate detours.
+
+        A fixed clear/cover point is just a ``Neighborhood`` of radius 0, so the whole
+        pool routes through the existing (tested) TSPN solver. Dwell terms
+        (clear/measure/localisation) are order-independent and *identical* to the
+        additive estimate — only the travel unifies.
+
+        **Subadditive cap:** a single TSP over disjoint clusters can be longer than
+        three start-rooted open tours, and Phase D must never score a plan as *worse*
+        than legacy would. So the joint result is returned only when it does not
+        exceed the additive one; otherwise the exact additive result is returned
+        unchanged. Hence ``joint.total <= additive.total`` always. Correctness is
+        never at stake here — like the additive proxy, this only *ranks*; the
+        full-clear guarantee is the SafetyShield / EXIT guard's job (§11)."""
+        add = self._estimate_additive(view)
+        chosen = (
+            self._greedy_cover(view.unknown_holes, view.anchors)
+            if (view.n_unknown and view.unknown_holes)
+            else []
+        )
+        neigh: List[Neighborhood] = [
+            Neighborhood(t, 0.0, 0.0) for t in view.clearable_targets
+        ]
+        for d in view.detected:
+            neigh.append(
+                Neighborhood(
+                    d.center,
+                    max(0.0, d.r_mec),
+                    self.loc.estimate(d.r_mec, d.diameter, d.sin_gamma),
+                )
+            )
+        neigh.extend(Neighborhood(a, 0.0, 0.0) for a in chosen)
+        if not neigh:
+            return FutureCost(0.0, 0.0, 0.0, 0.0, 0.0, 0)
+
+        plan = self.route.tspn_route(view.pos, neigh)
+        travel_time = plan.length / self.speed
+        # unified-route decomposition: all travel folds into j_route (#4); the dwell
+        # split matches the additive estimate so the two totals are travel-comparable.
+        j_route = travel_time + self.clear_hit_s * len(view.clearable_targets)
+        j_loc = plan.localization_cost + self.clear_hit_s * len(view.detected)
+        j_expl = self.measure_s * len(chosen)
+        j_cert = 0.0
+        total = (
+            self.w_route * j_route
+            + self.w_localization * j_loc
+            + self.w_exploration * j_expl
+            + self.w_certificate * j_cert
+        )
+        joint = FutureCost(j_route, j_loc, j_expl, j_cert, total, len(chosen))
+        return joint if joint.total <= add.total else add
 
     # -- J_route ------------------------------------------------------------
 

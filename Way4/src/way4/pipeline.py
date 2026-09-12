@@ -48,7 +48,7 @@ from .metrics import (
     RouteEvent,
     compute_route_metrics,
 )
-from .planner import CandidateGenerator, RecedingHorizonPlanner
+from .planner import CandidateGenerator, RecedingHorizonPlanner, SpatialStopGenerator
 
 
 @dataclass
@@ -106,6 +106,7 @@ class Way4Pipeline:
         max_steps: int = 2000,
         generator: Optional[CandidateGenerator] = None,
         planner: Optional[RecedingHorizonPlanner] = None,
+        planner_mode: str = "legacy",
         certificate: Optional[CertificateManager] = None,
         cost_model: Optional[AnalyticalCostModel] = None,
         opportunistic_clear: bool = True,
@@ -125,7 +126,23 @@ class Way4Pipeline:
             n_channels=n_channels, problem=problem
         )
         self.cost = cost_model or AnalyticalCostModel()
-        self.generator = generator or CandidateGenerator(cost_model=self.cost)
+        # P0 #2/#3 planner_mode: choose the candidate generator. "legacy" is the frozen
+        # action-centric generator (byte-identical to the shipped path); "spatial" wraps
+        # that same generator in SpatialStopGenerator (co-located services bundled into
+        # SpatialStops) — a non-destructive superset, so every legacy candidate still
+        # flows through and full-clear cannot regress (禁止10). An explicit ``generator=``
+        # overrides the mode; any other value is rejected.
+        if planner_mode not in ("legacy", "spatial"):
+            raise ValueError(
+                f"planner_mode must be 'legacy' or 'spatial', got {planner_mode!r}"
+            )
+        self.planner_mode = planner_mode
+        if generator is not None:
+            self.generator = generator
+        elif planner_mode == "spatial":
+            self.generator = SpatialStopGenerator(CandidateGenerator(cost_model=self.cost))
+        else:  # "legacy"
+            self.generator = CandidateGenerator(cost_model=self.cost)
         self.planner = planner or RecedingHorizonPlanner()
         self.executor = MacroExecutor(
             env,

@@ -158,6 +158,26 @@ class RouteEstimator:
         nearest = min(_dist(start, p) for p in pts)
         return nearest + self.set_tour_length(pts)
 
+    @staticmethod
+    def insertion_delta(route: Sequence[Point], point: Point) -> float:
+        """Marginal length (metres) of folding ``point`` into an existing OPEN
+        ``route`` at its cheapest position (§10 #5): the classic insertion delta
+        ``ΔL = d(a,c)+d(c,b)−d(a,b)`` minimised over adjacent pairs ``(a,b)``, or a
+        plain append ``d(last,c)`` at the tail. ``route[0]`` is the fixed start (the
+        robot pos), so nothing is inserted ahead of it. This is the route-aware cost
+        of adding one CLEAR/visit task to the unified pool — near-zero when ``point``
+        already lies on the way, which is what lets a co-located clear ride along a
+        bundle instead of being charged a fresh detour. Always ``>= 0`` (triangle
+        inequality); empty route -> 0."""
+        pts = [(float(x), float(y)) for x, y in route]
+        c = (float(point[0]), float(point[1]))
+        if not pts:
+            return 0.0
+        best = _dist(pts[-1], c)                       # append after the last node
+        for a, b in zip(pts, pts[1:]):
+            best = min(best, _dist(a, c) + _dist(c, b) - _dist(a, b))
+        return max(0.0, best)
+
     # -- uncertain neighbourhoods (TSPN) -----------------------------------
 
     def tspn_route(

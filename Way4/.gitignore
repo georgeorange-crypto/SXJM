@@ -1,0 +1,6 @@
+# Way4 local artifacts (never commit — training checkpoints, caches, run logs)
+runs/
+*.pt
+__pycache__/
+*.pyc
+.pytest_cache/
