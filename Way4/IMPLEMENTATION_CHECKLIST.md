@@ -74,7 +74,7 @@
 | [~] | P3-014 | exclusion/no-false-presence 与随机 effective soundness 已有；新增 P4 directional blind-arc 测试，证明 NO_SIGNAL 不触发 omni absence certificate，certificate 回归 13 passed。仍缺多 seed/多场景统计。 |
 | [~] | P3-015/P3-016 | 新增并运行 `scripts/negative_soundness_audit.py`，固定 seeds 11/23/47/71/99、500 trials 全部通过：NO_SIGNAL soundness 500/500、clear safety checks 500/500，结果写入 `results/negative_soundness_v1.json` 并有 artifact test。仍缺真实 certificate verifier 的全 seed no-false-absent 端到端表，故保持 partial。 |
 | [x] | P3-017 | 新增随机 10～16 present cardinality interval/property tests，覆盖 `p,z,u,q_min,q_max` soundness 与不误标 unknown。 |
-| [~] | P3-018/P3-019/P3-020 | 完整 Way4 回归为 205 passed、12 skipped；scheduler、NBV、TSP/TSPN 测试覆盖 timing/mask/hypothesis/brute force；新增固定 seed 端到端审计覆盖 5 个 problem-3 场景，均 full-clear、20/20 resolved、无 error。one-step objectives 的大样本效果仍缺失。 |
+| [~] | P3-018/P3-019/P3-020 | 最新完整 Way4 回归为 257 passed、12 skipped（805.60s）；scheduler、NBV、TSP/TSPN 测试覆盖 timing/mask/hypothesis/brute force；固定 seed 端到端审计覆盖 5 个 problem-3 场景，均 full-clear、20/20 resolved、无 error。one-step objectives 的大样本效果仍缺失。 |
 | [~] | P3-021/P3-022 | 新增并运行 `scripts/way4_seed_audit.py`，生成 `results/way4_seed_audit_1000_1004.json`：5/5 invariants passed、均正常退出；仍不是 stress 全 seed/多 field-kind 汇总，故保持 partial。 |
 | [~] | P3-023/P3-024/P3-025/P3-026 | `way4_p4_gate_2000_2009.json` 固定 10 seeds 全部 full-clear；已有 Math vs Candidate-PPO paired smoke `runs/paired_p4_smoke.json`（2/2 两侧 full-clear，PPO win-rate 0.5，1 regression，worst regression -4238.41s），说明 evaluator 能发现性能回退。尝试 test split 2050–2059 时长时间无结果并已中止，故仍缺 V4 paired fair comparison/大样本稳定性，保持 partial。 |
 | [~] | P3-027–P3-033 | 已生成 `results/ablation_matrix.json`，并有 `summarize_ablation_results()` 输出 complete/partial/missing、full-clear、均值、P90 和错误；真实 cell 全量运行与最终报告仍未完成。 |
@@ -97,8 +97,8 @@
 | GATE-11 | [x] | `executor/homing.py`、`certificate/fallback.py`、pipeline no-progress/fallback 逻辑和对应 tests。 |
 | GATE-12 | [~] | rollout/event transition 已可导出并可由独立 `TabularSMDPLearner` 消费，字段与 elapsed-time return 有回归测试；完整 event-level 线上训练证据仍不足。 |
 | GATE-13 | [~] | 固定 P4 seeds 2000–2009 gate 为 10/10 full-clear；已形成稳定性证据，但仍需更大样本置信区间/多 field-kind 结果。 |
-| GATE-14 | [~] | 有 `MathModelingCode/frozen/v4_n8_20260911/` 与 SHA256SUMS，但未证明项目级 freeze commit/最终 benchmark 口径。 |
-| GATE-15 | [ ] | 未发现能解释 Way4 相对 V4 提升的完整消融。 |
+| GATE-14 | [~] | `SXJM/Way4` 已有 Git freeze commits 与 source fingerprint；`MathModelingCode/frozen/v4_n8_20260911/` 有 SHA256SUMS，但 V4 对照 benchmark 口径仍未完成最终统一。 |
+| GATE-15 | [~] | 已有锁定 evaluation splits、10-cell ablation specification、summarizer 和 paired smoke；真实全矩阵执行尚未完成，且 Candidate-PPO 大样本评测曾超时，无法据此解释 Way4 相对 V4 的提升。 |
 
 ## 验证记录
 
