@@ -1,9 +1,9 @@
 {
   "kind": "way4-source-tree-fingerprint-v1",
-  "git_head": "399d6ad",
+  "git_head": "8f09be4",
   "working_tree_has_uncommitted_changes": true,
-  "file_count": 106,
-  "tree_sha256": "e8a438e0101d92b4c484d55585b1117eb0d69adcc2df2ad5b4435f8aaacd14b9",
+  "file_count": 108,
+  "tree_sha256": "fa59f3a86e68bbf07b22c942196d27defd2d0fa72b2550ab9c8adb95517d5ba0",
   "files": [
     {
       "path": "DESIGN.md",
@@ -12,7 +12,7 @@
     },
     {
       "path": "FREEZE_MANIFEST.md",
-      "sha256": "485b01881b0ef0653e5912cff68733b49a012813772dde0095997b9aa8bb45fc",
+      "sha256": "caa4fdd207b46e9a30ef6e3f1b7666aef980d24b805e01bc4d954d1baa456276",
       "bytes": 1453
     },
     {
@@ -172,8 +172,8 @@
     },
     {
       "path": "src/way4/rl/__init__.py",
-      "sha256": "debf8118e0044aada28b3cd81421bdb3118863df6c683233ee94395fe5f99832",
-      "bytes": 2292
+      "sha256": "5c8a3394f62caaf031f8d02579c839491cebe9b7be6dda0c9909800ffbedb702",
+      "bytes": 2395
     },
     {
       "path": "src/way4/rl/candidate_ppo.py",
@@ -219,6 +219,11 @@
       "path": "src/way4/rl/scorer.py",
       "sha256": "223329873dfb3227c115e10499b9a58b3fc5c773554eb905777472d306bb63fd",
       "bytes": 7221
+    },
+    {
+      "path": "src/way4/rl/smdp.py",
+      "sha256": "6b7ea6e076c43696ee051bafbe65066236fd1c8dea1e94944d25e7213f54e489",
+      "bytes": 2529
     },
     {
       "path": "src/way4/rl/train.py",
@@ -499,6 +504,11 @@
       "path": "tests/test_scheduler_value_components.py",
       "sha256": "78a1c6c83ac1ae2bd581dbc055e8d63d7bcdbfd5be29f6388ecef23e405861e2",
       "bytes": 518
+    },
+    {
+      "path": "tests/test_smdp_learner.py",
+      "sha256": "51fcac9e549d9aa307fc8833370f4d4ccf61f480032abcbd057dd8f54adcc26f",
+      "bytes": 1204
     },
     {
       "path": "tests/test_spatial_stops.py",

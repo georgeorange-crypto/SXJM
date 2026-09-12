@@ -14,7 +14,7 @@
 
 | 状态 | ID | 证据与结论 |
 |---|---|---|
-| [x] | P0-000 | 已创建 Git freeze commit `399d6ad`（`way4 implementation freeze with evidence`）；`FREEZE_MANIFEST.md` 与 `results/way4_source_fingerprint.json` 记录权威源码根、环境、逐文件 SHA-256 和 tree fingerprint。 |
+| [x] | P0-000 | 已创建 Git freeze commits `399d6ad` 与 `8f09be4`；`FREEZE_MANIFEST.md` 与 `results/way4_source_fingerprint.json` 记录权威源码根、环境、逐文件 SHA-256 和 tree fingerprint。 |
 | [~] | P0-001 | 已有统一 effective 查询、`EffectiveRegion`、保守栅格面积/直径/采样，并新增 40×8 随机合法观测 soundness property test；仍需把所有 NBV/coverage 调用完全收敛到该接口。 |
 | [x] | P0-002 | `record_no_signal()` 立即更新 exclusion；NBV/native hypothesis sampling 使用 effective samples，安全几何仍明确使用 outer `F_c`，避免把近似域误作 certificate。 |
 | [x] | P0-003 | 已新增 `EffectiveRegion` 显式保守栅格表示，支持 holes/multiplicity 的连通分量统计，并与安全 outer `F_c` 分层。 |
@@ -40,7 +40,7 @@
 | [x] | P0-023 | `ScanPlan` 已记录 `stop_reason`/`stop_value`/dwell cost；无正 VOI 时返回显式 STOP，且有测试。 |
 | [x] | P0-024 | `core/cost.py`、`tests/test_cost_model_gold.py`、`test_way4_gold_timing_vs_env.py` 覆盖速度 5、measure 5、switch 1 等时间模型。 |
 | [x] | P0-025 | 已有正式事件类型、pipeline 事件记录与 `EventBus` 全局/按类型订阅接口；新增 `Way4Pipeline(event_bus=...)` 外部只读发布通道，pipeline 外部订阅回归测试通过。 |
-| [~] | P0-026 | `OptionTransition` 已支持 `transition_dataset()` JSON-ready 导出，pipeline/rollout 已接入；独立 SMDP learner 训练与效果证据仍缺失。 |
+| [~] | P0-026 | `OptionTransition` 支持 `transition_dataset()` JSON-ready 导出，且新增独立 `TabularSMDPLearner`，按 option 聚合 semi-Markov elapsed-time return，并覆盖 terminal/full-clear 奖励；真实环境 rollout 训练曲线与效果证据仍缺失。 |
 | [x] | P0-027 | `core/actions.py` 使用 macro action；`rl` 有 candidate/residual planner，未见 learner 直接输出 dx/dy/channel 的主路径。 |
 | [x] | P0-028 | `planner/candidates.py` 生成候选，scheduler/certificate 过滤，executor 执行；有 `test_candidate_generator.py`、`test_planner_mode.py` 等 mask 证据。 |
 
@@ -95,7 +95,7 @@
 | GATE-09 | [x] | `core/cost.py` 与 gold timing tests。 |
 | GATE-10 | [~] | certificate/mask/fallback 基础存在；全 invariant 运行证据不足。 |
 | GATE-11 | [x] | `executor/homing.py`、`certificate/fallback.py`、pipeline no-progress/fallback 逻辑和对应 tests。 |
-| GATE-12 | [~] | rollout 代码存在，完整 event-level SMDP 字段未证实。 |
+| GATE-12 | [~] | rollout/event transition 已可导出并可由独立 `TabularSMDPLearner` 消费，字段与 elapsed-time return 有回归测试；完整 event-level 线上训练证据仍不足。 |
 | GATE-13 | [~] | 固定 P4 seeds 2000–2009 gate 为 10/10 full-clear；已形成稳定性证据，但仍需更大样本置信区间/多 field-kind 结果。 |
 | GATE-14 | [~] | 有 `MathModelingCode/frozen/v4_n8_20260911/` 与 SHA256SUMS，但未证明项目级 freeze commit/最终 benchmark 口径。 |
 | GATE-15 | [ ] | 未发现能解释 Way4 相对 V4 提升的完整消融。 |
