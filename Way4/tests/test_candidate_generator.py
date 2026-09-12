@@ -56,13 +56,50 @@ def test_clear_only_for_clearable_channels():
     assert clears == []
 
 
-# -- REFINE -------------------------------------------------------------------
+# -- INITIALIZE / REFINE ------------------------------------------------------
 
 
-def test_refine_targets_nbv_point_and_pins_its_channel():
+def test_initialize_targets_nbv_point_when_single_bearing():
+    """P0-C (§7): a DETECTED channel with a SINGLE bearing (a thin sliver, no
+    crossing yet) yields INITIALIZE — the first triangulating scan — not REFINE.
+    Same NBV viewpoint / batch / gains as a REFINE; only the intent + meta key
+    differ, and the channel stays DETECTED (no 6th belief state)."""
     belief, cert = _fresh()
     belief[2].record_bearing((0.0, 0.0), 40.0)       # single bearing -> DETECTED wedge
     assert belief[2].status == ChannelStatus.DETECTED
+    assert len(belief[2].bearings) == 1
+    state = RobotState()
+
+    nbv = MinimaxNBV()
+    gen = CandidateGenerator(nbv=nbv)
+    cands = gen.generate(belief, cert, state)
+    inits = _by_type(cands, MacroActionType.INITIALIZE)
+    assert len(inits) == 1
+    assert _by_type(cands, MacroActionType.REFINE) == []   # not a refine yet
+    m = inits[0]
+
+    expected = nbv.choose(belief[2], state.pos)       # deterministic, stateless
+    assert expected is not None
+    assert m.target == expected.point
+    assert m.refinement_gain == pytest.approx(expected.expected_shrink)
+    assert 2 in m.scan_channels                        # its own channel is pinned
+    assert m.meta["init_channel"] == 2
+    assert "refine_channel" not in m.meta
+    # batch-scan time comes from the authoritative cost model
+    assert m.expected_time == pytest.approx(
+        AnalyticalCostModel().batch_scan_time_s(state, m.target, m.scan_channels)
+    )
+
+
+def test_refine_targets_nbv_point_and_pins_its_channel():
+    """A DETECTED channel with >=2 bearings is an already-bounded lens -> REFINE."""
+    belief, cert = _fresh()
+    # two crossing bearings from different points -> still DETECTED (large MEC) but
+    # F_c is a bounded lens, so the next scan REFINEs rather than INITIALIZEs.
+    belief[2].record_bearing((0.0, 0.0), 40.0)
+    belief[2].record_bearing((0.0, 1200.0), -40.0)
+    assert belief[2].status == ChannelStatus.DETECTED
+    assert len(belief[2].bearings) >= 2
     state = RobotState()
 
     nbv = MinimaxNBV()
@@ -70,6 +107,7 @@ def test_refine_targets_nbv_point_and_pins_its_channel():
     cands = gen.generate(belief, cert, state)
     refines = _by_type(cands, MacroActionType.REFINE)
     assert len(refines) == 1
+    assert _by_type(cands, MacroActionType.INITIALIZE) == []
     m = refines[0]
 
     expected = nbv.choose(belief[2], state.pos)       # deterministic, stateless

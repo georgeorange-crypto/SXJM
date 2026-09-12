@@ -6,8 +6,12 @@ proposes; it never marks absent (禁止6) or bypasses the clear guard (禁止7) 
 live in the certificate/safety layers. The families (§7):
 
   * **CLEAR**   — one per clearable channel, at its MEC centre (§3.3 blind clear).
-  * **REFINE**  — one per DETECTED-but-not-clearable channel, at its minimax NBV
-    viewpoint (§8), batch-scanning that channel + free-rider channels.
+  * **INITIALIZE** — a DETECTED channel that still has a single bearing (a thin
+    sliver F_c, no crossing yet): the minimax NBV viewpoint whose job is the first
+    *triangulating* bearing. Same viewpoint/batch as REFINE — it reuses the DETECTED
+    state (no new belief state, §4), only the intent label differs.
+  * **REFINE**  — a DETECTED channel with ≥2 bearings (an already-bounded lens), at
+    its minimax NBV viewpoint (§8), batch-scanning that channel + free-rider channels.
   * **EXPLORE** — multipurpose coverage/discovery waypoints (fallback anchors + a
     coarse ring), scored by joint UNKNOWN coverage gain; the scheduler picks the
     batch. Under VERIFICATION mode these become **VERIFY** waypoints scanning only
@@ -129,12 +133,24 @@ class CandidateGenerator:
                 plan_channels = (c,)
             else:
                 plan_channels = tuple(plan.channels)
-            m = MacroCandidate(MacroActionType.REFINE, q, scan_channels=plan_channels)
+            # P0-C (§7): split the focused-scan intent by how bounded F_c already is.
+            # A DETECTED channel carries >=1 bearing (near -> LOCALIZED, so DETECTED is
+            # bearing-only); with a SINGLE bearing F_c is a thin unbounded sliver — no
+            # crossing yet — and the next scan's job is the first *triangulating*
+            # bearing: an INITIALIZE. With >=2 bearings F_c is an already-bounded lens
+            # and the scan REFINEs it (§8). Same NBV viewpoint / batch / gains / cost
+            # either way — only the intent label and focus-meta key differ, and the
+            # belief stays DETECTED (no 6th state; §4 stays frozen).
+            if len(belief[c].bearings) < 2:
+                m = MacroCandidate(MacroActionType.INITIALIZE, q, scan_channels=plan_channels)
+                m.meta["init_channel"] = c
+            else:
+                m = MacroCandidate(MacroActionType.REFINE, q, scan_channels=plan_channels)
+                m.meta["refine_channel"] = c
             m.refinement_gain = res.expected_shrink
             m.certificate_gain = self._unknown_coverage_gain(belief, certificate, plan_channels, q)
             m.exploration_gain = plan.value
             m.expected_time = self.cost.batch_scan_time_s(state, q, plan_channels)
-            m.meta["refine_channel"] = c
             m.meta["worst_case_diameter"] = res.worst_case_diameter
             out.append(m)
         return out

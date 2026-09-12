@@ -172,6 +172,8 @@ class OutcomePredictor:
     def _focus_channel(self, candidate: MacroCandidate) -> Optional[int]:
         if "refine_channel" in candidate.meta:
             return int(candidate.meta["refine_channel"])
+        if "init_channel" in candidate.meta:      # P0-C INITIALIZE (§7): DETECTED, 1 bearing
+            return int(candidate.meta["init_channel"])
         if candidate.clear_channel is not None:
             return int(candidate.clear_channel)
         if candidate.scan_channels:
