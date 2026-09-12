@@ -1,0 +1,11 @@
+{
+  "problem": 4,
+  "seed": 2000,
+  "runner_state": "after_way3_adapter_virtual_time_fallback",
+  "cells": {
+    "way4_full": {"success": true, "full_clear": true, "resolved": 20, "n_channels": 20, "present": 13, "virtual_time_s": 16956.050033, "error": null, "steps": 92},
+    "adaptive_rerank": {"success": true, "full_clear": true, "resolved": 20, "n_channels": 20, "present": 13, "virtual_time_s": 18846.759436, "error": null, "steps": 138}
+  },
+  "source": "scripts/run_deterministic_ablations.py run_cell",
+  "synthetic": false
+}

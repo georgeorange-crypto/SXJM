@@ -1,5 +1,25 @@
 # Way4 implementation checklist — evidence audit
 
+## 2026-09-12 implementation pass (this run)
+
+- Authority: `SXJM/Way4/`; `remote_way4_20260912/` was not modified.
+- Completed in this pass: STOP one-hot/schema width, feature schema version/hash,
+  incompatible checkpoint rejection, explicit `route_marginal`/`route_saving`
+  fields, SpatialStop route feature population, and spatial-mode joint-route
+  wiring.
+- Targeted evidence: `25 passed in 0.74s` across spatial stops, joint route,
+  batch STOP and starvation tests.
+- Full evidence: `261 passed, 12 skipped in 1993.14s` using the frozen
+  `gesture_env` interpreter. Skips remain environment/optional-dependency skips.
+- These results close only the corresponding interface/regression items. They do
+  not prove completion of WAIT_FOR_ROUTE, unified RemainingTask routing, Pareto
+  opportunity sets, full route insertion optimization, long RL training, or
+  fair V6 same-case statistical evaluation; those remain `[~]`/`[ ]` below.
+- Second pass added pure `RemainingTask`, Euclidean route insertion delta and
+  strict two-objective Pareto pruning in `src/way4/planner/opportunities.py`;
+  targeted evidence: `21 passed in 0.35s`. This is the reusable foundation, not
+  yet an end-to-end task-pool or viewpoint-region implementation.
+
 审计日期：2026-09-12。判定规则：`[x]` 有代码+测试/运行证据；`[~]` 有部分实现但未闭环或缺验收证据；`[ ]` 未发现实现；`[?]` 因环境/证据不足无法确认。路径均相对于本项目根目录。
 
 ## 总结
@@ -77,7 +97,7 @@
 | [~] | P3-018/P3-019/P3-020 | 最新完整 Way4 回归为 257 passed、12 skipped（805.60s）；scheduler、NBV、TSP/TSPN 测试覆盖 timing/mask/hypothesis/brute force；固定 seed 端到端审计覆盖 5 个 problem-3 场景，均 full-clear、20/20 resolved、无 error。one-step objectives 的大样本效果仍缺失。 |
 | [~] | P3-021/P3-022 | 新增并运行 `scripts/way4_seed_audit.py`，生成 `results/way4_seed_audit_1000_1004.json`：5/5 invariants passed、均正常退出；仍不是 stress 全 seed/多 field-kind 汇总，故保持 partial。 |
 | [~] | P3-023/P3-024/P3-025/P3-026 | `way4_p4_gate_2000_2009.json` 固定 10 seeds 全部 full-clear；已有 Math vs Candidate-PPO paired smoke `runs/paired_p4_smoke.json`（2/2 两侧 full-clear，PPO win-rate 0.5，1 regression，worst regression -4238.41s），说明 evaluator 能发现性能回退。尝试 test split 2050–2059 时长时间无结果并已中止，故仍缺 V4 paired fair comparison/大样本稳定性，保持 partial。 |
-| [~] | P3-027–P3-033 | 新增 `scripts/run_deterministic_ablations.py`，真实运行并生成 `results/ablation_matrix_real_2000.json`：`way4_full` 为 1/1 full-clear，adaptive 两格虽 full-clear 但保留 `no_progress_stall`，其余 5 格明确记录 `unsupported_configuration`；`summarize_ablation_results()` 可输出 complete/partial/missing、full-clear、均值、P90 和错误。真实全 seed cell、修复 adaptive stall、最终跨场景报告仍未完成。 |
+| [~] | P3-027–P3-033 | `scripts/run_deterministic_ablations.py` 已真实执行并生成 `results/ablation_matrix_real_2000.json`；Way3 adapter 已修复缺失 `Engine.virtual_time_s` fallback，另保存 `results/ablation_fixed_supported_2000.json`（way4_full/adaptive_rerank 均 success、full-clear、20/20 resolved、无 error），并有 artifact test。其余 5 格仍为 `unsupported_configuration`，真实全 seed cell 与最终跨场景报告仍未完成。 |
 | [x] | P3-034 | `way4.ALGORITHM_NAME`、`LEARNER_ROLE` 与 `DESIGN.md` 已冻结最终算法命名；仍需在最终实验报告/论文产物中沿用该名称。 |
 
 ## 当前 P0 Gate

@@ -69,12 +69,12 @@ class Way3EngineAdapter:
     def measure(self, x: float, y: float, channel: int) -> Tuple[Optional[Observation], float]:
         resp, out = self.engine.measure(x, y, channel)
         if out is None:   # deadline: command did not execute
-            return None, float(resp.get("virtual_time_s", self.engine.virtual_time_s))
+            return None, float(resp.get("virtual_time_s", getattr(self.engine, "virtual_time_s", 0.0)))
         vts = float(resp["virtual_time_s"])
         return _outcome_to_observation(out, vts), vts
 
     def clear(self, x: float, y: float, channel: int) -> Tuple[bool, float]:
         resp, out = self.engine.clear(x, y, channel)
         if out is None:   # deadline
-            return False, float(resp.get("virtual_time_s", self.engine.virtual_time_s))
+            return False, float(resp.get("virtual_time_s", getattr(self.engine, "virtual_time_s", 0.0)))
         return (out.result == "success"), float(resp["virtual_time_s"])
