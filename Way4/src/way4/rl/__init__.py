@@ -36,6 +36,7 @@ from .train import (
 )
 from .candidate_ppo import CandidateActorCritic, CandidateChannelFeatures, SpatialCandidate, CandidatePPOTrainer, PPOConfig, compute_gae
 from .candidate_rollout import CandidateTransition, finish_episode, collate
+from .smdp import SMDPTrainConfig, TabularSMDPLearner
 
 __all__ = [
     "CANDIDATE_FEATURE_DIM",
@@ -61,4 +62,6 @@ __all__ = [
     "CandidateTransition",
     "finish_episode",
     "collate",
+    "SMDPTrainConfig",
+    "TabularSMDPLearner",
 ]
