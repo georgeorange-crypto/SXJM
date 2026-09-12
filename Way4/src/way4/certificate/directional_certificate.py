@@ -54,7 +54,7 @@ def nearby_convex_hull(point: Point, detectors: Sequence[Point], radius: float =
                        eps: float = 1e-9) -> List[Point]:
     """Return the convex hull of detectors within the guaranteed radius."""
     nearby = sorted({(float(x), float(y)) for x, y in detectors
-                     if _dist(point, (x, y)) <= radius + eps})
+                     if eps < _dist(point, (x, y)) <= radius + eps})
     if len(nearby) <= 1:
         return nearby
     lower: List[Point] = []

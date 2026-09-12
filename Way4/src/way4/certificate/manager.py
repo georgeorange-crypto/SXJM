@@ -192,8 +192,11 @@ class CertificateManager:
             # This local check is nevertheless useful: once the current point is
             # surrounded by nearby scan points, it records the new P4 geometry
             # without certifying the whole arena.
+            points = cert.negative_scan_points
+            probe = (sum(x for x, _ in points) / len(points),
+                     sum(y for _, y in points) / len(points))
             cert.directional_counterexample = check_point(
-                p, cert.negative_scan_points, radius=self._verifier.radius
+                probe, points, radius=self._verifier.radius
             )
             cert.directional_local_certificate = (
                 cert.directional_counterexample is None
