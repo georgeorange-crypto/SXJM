@@ -48,6 +48,7 @@ class DetectedRegion:
     r_mec: float
     diameter: float
     sin_gamma: float = 0.5          # crossing-quality proxy; smaller => costlier to fix
+    channel: int = 0
 
 
 @dataclass
@@ -60,6 +61,7 @@ class FutureCost:
     j_certificate: float = 0.0
     total: float = 0.0
     n_cover_stops: int = 0
+    measurement_predictions: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -117,17 +119,19 @@ def build_cost_view(
     detected: List[DetectedRegion] = []
     for c in range(1, belief.n_channels + 1):
         b = belief[c]
-        if b.status == ChannelStatus.DETECTED and b.mec_center is not None:
+        if b.status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED) and b.mec_center is not None:
             detected.append(
                 DetectedRegion(
                     (float(b.mec_center[0]), float(b.mec_center[1])),
                     float(b.mec_radius),
                     float(b.diameter),
                     _sin_gamma_proxy(b, default_sin_gamma),
+                    channel=c,
                 )
             )
 
     unknown = belief.unknown_channels()
+    pending_present = belief.unobserved_present_channels()
     holes: List[Point] = []
     if certificate is not None and unknown:
         seen = set()
@@ -139,7 +143,8 @@ def build_cost_view(
                     holes.append((float(h[0]), float(h[1])))
 
     anchors = [(float(a[0]), float(a[1])) for a in certificate.anchors] if certificate is not None else []
-    return CostView(state.pos, clearable, detected, holes, len(unknown), anchors)
+    return CostView(state.pos, clearable, detected, holes,
+                    len(unknown) + len(pending_present), anchors)
 
 
 class FutureCostEstimator:
@@ -192,7 +197,8 @@ class FutureCostEstimator:
             + self.w_exploration * j_expl
             + self.w_certificate * j_cert
         )
-        return FutureCost(j_route, j_loc, j_expl, j_cert, total, n_stops)
+        return FutureCost(j_route, j_loc, j_expl, j_cert, total, n_stops,
+                          self._measurement_predictions(view))
 
     # -- joint route (P0 #4/#7, planner=spatial) ---------------------------
 
@@ -278,6 +284,22 @@ class FutureCostEstimator:
         plan = self.route.tspn_route(view.pos, neigh)
         # approach travel + expected localisation work + one clear per region
         return plan.length / self.speed + plan.localization_cost + self.clear_hit_s * len(view.detected)
+
+    @staticmethod
+    def _measurement_predictions(view: CostView) -> dict:
+        """Uncertainty-aware estimate of remaining measurements per DETECTED channel.
+
+        This is deliberately a ranking proxy: larger MEC/diameter and poor
+        crossing geometry require more refinement; it never writes belief or
+        certificate state.
+        """
+        out = {}
+        for idx, d in enumerate(view.detected):
+            key = int(d.channel) if d.channel else idx
+            geometry = (max(0.0, d.r_mec) / 10.0) + (max(0.0, d.diameter) / 20.0)
+            crossing = 1.0 / max(abs(d.sin_gamma), 1e-3)
+            out[key] = max(1, int(round(1.0 + geometry * crossing)))
+        return out
 
     # -- J_certificate + stop count ----------------------------------------
 

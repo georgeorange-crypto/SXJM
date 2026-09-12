@@ -86,6 +86,25 @@ class OutcomePredictor:
         self.p_detected_channel = p_detected_channel
         self.p_unknown_channel = p_unknown_channel
 
+    def geometric_features(self, belief_region, point, bearing_deg, *, half_width=1.0):
+        """Return geometry-derived post-bearing features without fixed outcome
+        probabilities.  The caller supplies the current feasible region and may
+        evaluate the returned wedges with the project's MEC implementation."""
+        from math import radians, cos, sin
+        q = (float(point[0]), float(point[1]))
+        theta = radians(float(bearing_deg))
+        return {
+            "point": q,
+            "bearing_deg": float(bearing_deg),
+            "bearing_unit": (cos(theta), sin(theta)),
+            "half_width_deg": float(half_width),
+            "region_size_before": len(belief_region) if hasattr(belief_region, "__len__") else None,
+        }
+
+    def sampled_geometry_outcomes(self, region_points, point, bearings=(-1.0, 0.0, 1.0)):
+        """Build outcome features from source samples, rather than fixed priors."""
+        return [self.geometric_features(region_points, point, b) for b in bearings]
+
     def predict(self, candidate: MacroCandidate, belief, base: CostView) -> List[Outcome]:
         at = candidate.action_type
         if at == MacroActionType.EXIT:
@@ -133,7 +152,7 @@ class OutcomePredictor:
         focus_status = belief[focus].status if focus is not None else ChannelStatus.UNKNOWN
         table = (
             self.p_detected_channel
-            if focus_status == ChannelStatus.DETECTED
+            if focus_status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED)
             else self.p_unknown_channel
         )
         outs: List[Outcome] = []
@@ -156,7 +175,7 @@ class OutcomePredictor:
     def _view_detect(self, candidate, focus, focus_status, q: Point, base: CostView) -> CostView:
         v = base.copy()
         v.pos = q
-        if focus_status == ChannelStatus.DETECTED:
+        if focus_status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED):
             # refine: shrink the matching region by the NBV expected shrink
             shrink = float(candidate.refinement_gain)
             v.detected = self._shrink_one(v.detected, q, shrink)
@@ -174,7 +193,7 @@ class OutcomePredictor:
         v.clearable_targets = list(v.clearable_targets) + [q]
         if focus_status == ChannelStatus.UNKNOWN:
             v.n_unknown = max(0, v.n_unknown - 1)
-        elif focus_status == ChannelStatus.DETECTED:
+        elif focus_status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED):
             v.detected = _remove_nearest_region(v.detected, q)
         return v
 
@@ -213,6 +232,7 @@ class RecedingHorizonPlanner:
         speed: float = 5.0,
         measure_s: float = 5.0,
         clear_hit_s: float = 5.0,
+        voi_weight: float = 0.0,
     ) -> None:
         self.fce = future_cost or FutureCostEstimator(
             speed=speed, measure_s=measure_s, clear_hit_s=clear_hit_s
@@ -226,6 +246,7 @@ class RecedingHorizonPlanner:
         self.speed = float(speed)
         self.measure_s = float(measure_s)
         self.clear_hit_s = float(clear_hit_s)
+        self.voi_weight = float(voi_weight)
 
     # -- public -------------------------------------------------------------
 
@@ -240,7 +261,17 @@ class RecedingHorizonPlanner:
             evals.append(
                 CandidateEvaluation(a, c, jagg, c + jagg, [(lbl, j) for lbl, _, j in jvals])
             )
-        best = min(evals, key=lambda e: e.q_value) if evals else None
+        if evals and self.voi_weight > 0.0:
+            # VOI is a secondary task-time signal. Safety remains unchanged:
+            # candidates were generated and masked by the mathematical planner.
+            best = min(
+                evals,
+                key=lambda e: e.q_value - self.voi_weight * self.value_of_information(
+                    e.candidate, belief, certificate, state
+                ),
+            )
+        else:
+            best = min(evals, key=lambda e: e.q_value) if evals else None
         return PlanResult(
             best.candidate if best else None,
             best.q_value if best else 0.0,
@@ -248,6 +279,49 @@ class RecedingHorizonPlanner:
             self.horizon,
             self.outcome_mode,
         )
+
+    def value_of_information(self, candidate: MacroCandidate, belief, certificate, state) -> float:
+        """Expected task-time reduction per second spent on an option."""
+        base = build_cost_view(belief, certificate, state)
+        before = self.fce.estimate(base).total
+        outcomes = self.predictor.predict(candidate, belief, base)
+        if not outcomes or candidate.expected_time <= 0.0:
+            return 0.0
+        after = sum(o.prob * self._cost_to_go(o.view, max(0, self.horizon - 1))
+                    for o in outcomes)
+        return max(0.0, before - after) / float(candidate.expected_time)
+
+    def sensing_trigger(self, candidate: MacroCandidate, belief, certificate, state,
+                        threshold: float = 0.0) -> bool:
+        """Decide whether a waypoint's sensing value pays its incremental cost.
+
+        ``candidate.expected_time`` already includes route travel, detection and
+        switching for the proposed batch.  This keeps the trigger on mission-time
+        units and avoids the unsafe shortcut of measuring every route waypoint.
+        """
+        if candidate.action_type in (MacroActionType.CLEAR, MacroActionType.EXIT):
+            return False
+        return self.value_of_information(candidate, belief, certificate, state) > float(threshold)
+
+    def should_replan(self, event, *, marginal_value_drop: float = 0.0,
+                      new_candidate_better: bool = False) -> bool:
+        """Event-driven global-replan policy.
+
+        Strategic lifecycle/cardinality/certificate events force a replan;
+        ordinary batch completion only does so when its marginal value collapsed
+        or a materially better candidate appeared.
+        """
+        name = getattr(getattr(event, "event_type", event), "value", event)
+        strategic = {
+            "POSITIVE_DISCOVERY", "INITIALIZED", "LOCALIZED",
+            "SOURCE_CLEARED", "CHANNEL_CERTIFIED_EMPTY", "CARDINALITY_CLOSURE",
+            "COVERAGE_THRESHOLD", "TIME_BUDGET_WARNING",
+        }
+        if name in strategic:
+            return True
+        if name == "BATCH_COMPLETED":
+            return float(marginal_value_drop) > 0.5 or bool(new_candidate_better)
+        return False
 
     # -- aggregation over outcomes -----------------------------------------
 

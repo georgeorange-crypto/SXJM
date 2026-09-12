@@ -6,3 +6,6 @@ frozen-design implementation; see the milestone map in DESIGN.md §14.
 """
 
 __version__ = "0.0.0"
+
+ALGORITHM_NAME = "Certificate-Guided Active Belief Planning"
+LEARNER_ROLE = "Learning-Augmented Planner"

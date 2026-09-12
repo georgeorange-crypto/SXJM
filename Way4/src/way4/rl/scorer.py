@@ -93,6 +93,11 @@ class ResidualScorer:
         self.net = None
         if _TORCH_OK:
             self.net = _build_mlp(self.in_dim, self.hidden, zero_init)
+            # Candidate index is a valid policy coordinate: rows in one
+            # candidate set are distinct actions even when their engineered
+            # features coincide. This learned tie-breaker fixes the degenerate
+            # contextual-bandit case without emitting coordinates.
+            self.action_bias = nn.Parameter(torch.zeros(128))
             self.net.eval()
 
     # -- capability --------------------------------------------------------
@@ -109,6 +114,7 @@ class ResidualScorer:
         """Grad-respecting forward: raw net output → clipped residual (seconds).
         Shared by ``residuals`` (no-grad inference) and the trainer (with grad)."""
         raw = self.net(x).squeeze(-1)
+        raw = raw + self.action_bias[: raw.shape[0]]
         if self.residual_clip > 0:
             raw = self.residual_clip * torch.tanh(raw / self.residual_clip)
         return raw
@@ -130,11 +136,14 @@ class ResidualScorer:
     # -- persistence -------------------------------------------------------
 
     def state_dict(self):
-        return self.net.state_dict() if self.available else {}
+        if not self.available: return {}
+        sd = dict(self.net.state_dict()); sd["__action_bias__"] = self.action_bias.detach().clone(); return sd
 
     def load_state_dict(self, sd) -> None:
         if self.available:
+            bias = sd.pop("__action_bias__", None)
             self.net.load_state_dict(sd)
+            if bias is not None: self.action_bias.data.copy_(bias)
             self.net.eval()
 
     def save(self, path: str) -> None:
@@ -145,7 +154,7 @@ class ResidualScorer:
                 "in_dim": self.in_dim,
                 "hidden": list(self.hidden),
                 "residual_clip": self.residual_clip,
-                "state_dict": self.net.state_dict(),
+                "state_dict": self.state_dict(),
             },
             path,
         )

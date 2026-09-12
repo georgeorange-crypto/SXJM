@@ -21,7 +21,8 @@ from .receding_horizon import (
     PlanResult,
     RecedingHorizonPlanner,
 )
-from .spatial import SpatialStopGenerator
+from .spatial import InformationRidge, SpatialStopGenerator
+from .baselines import CoverageGreedyResult, coverage_greedy
 
 __all__ = [
     "CandidateGenerator",
@@ -36,4 +37,7 @@ __all__ = [
     "PlanResult",
     "RecedingHorizonPlanner",
     "SpatialStopGenerator",
+    "InformationRidge",
+    "CoverageGreedyResult",
+    "coverage_greedy",
 ]

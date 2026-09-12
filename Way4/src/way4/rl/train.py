@@ -62,6 +62,7 @@ class EpisodeRecord:
     virtual_time_s: float
     n_unresolved: int
     ret: float = 0.0
+    transitions: List[object] = field(default_factory=list)
 
 
 @dataclass
@@ -106,7 +107,7 @@ class ResidualTrainer:
         self.scorer = scorer
         self.rollout_fn = rollout_fn
         self.cfg = config or TrainConfig()
-        self.opt = torch.optim.Adam(self.scorer.net.parameters(), lr=self.cfg.lr)
+        self.opt = torch.optim.Adam(list(self.scorer.net.parameters()) + [self.scorer.action_bias], lr=self.cfg.lr)
         self.history: List[dict] = []
 
     def train(self, log: Optional[Callable[[dict], None]] = None) -> List[dict]:

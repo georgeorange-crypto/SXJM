@@ -1,0 +1,43 @@
+{
+  "audit": "negative-soundness-v1",
+  "rows": [
+    {
+      "seed": 11,
+      "trials": 100,
+      "no_signal_sound": 100,
+      "clear_checks": 100,
+      "passed": true
+    },
+    {
+      "seed": 23,
+      "trials": 100,
+      "no_signal_sound": 100,
+      "clear_checks": 100,
+      "passed": true
+    },
+    {
+      "seed": 47,
+      "trials": 100,
+      "no_signal_sound": 100,
+      "clear_checks": 100,
+      "passed": true
+    },
+    {
+      "seed": 71,
+      "trials": 100,
+      "no_signal_sound": 100,
+      "clear_checks": 100,
+      "passed": true
+    },
+    {
+      "seed": 99,
+      "trials": 100,
+      "no_signal_sound": 100,
+      "clear_checks": 100,
+      "passed": true
+    }
+  ],
+  "all_passed": true,
+  "total_trials": 500,
+  "total_clear_checks": 500
+}

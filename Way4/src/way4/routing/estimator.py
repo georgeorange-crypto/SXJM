@@ -58,6 +58,49 @@ class Neighborhood:
     localization_cost: float = 0.0
 
 
+def guaranteed_clear_neighborhood(
+    feasible: Neighborhood, clear_radius: float
+) -> Optional[Neighborhood]:
+    """Return the guaranteed-clear set ``K`` for a disk feasible set.
+
+    For ``F = B(center, r_F)``, the worst-case source distance from a robot
+    position ``y`` is ``||y-center|| + r_F``.  Therefore
+    ``K = B(center, max(0, R_kill-r_F))``.  A negative residual means that
+    the feasible set is wider than the clear radius and has no guaranteed
+    point; returning ``None`` keeps that safety condition explicit.
+
+    This is the exact convex-disk special case of the general intersection
+    ``K = intersection_x B(x, R_kill)``.  Polygon/half-plane belief sets must
+    provide their boundary vertices to a future generalisation.
+    """
+    residual = float(clear_radius) - float(feasible.radius)
+    if residual < -1e-12:
+        return None
+    return Neighborhood(
+        center=tuple(feasible.center),
+        radius=max(0.0, residual),
+        localization_cost=float(feasible.localization_cost),
+    )
+
+
+def guaranteed_clear_point(vertices: Sequence[Point], clear_radius: float):
+    """Return ``(MEC center, MEC radius)`` when finite feasible vertices admit K.
+
+    For a polygon/multipolygon outer boundary, every feasible point is covered
+    whenever the maximum distance to the returned MEC center is <= ``clear_radius``.
+    This is a conservative finite-vertex certificate: an empty/degenerate input or
+    a radius failure returns ``None`` rather than inventing a waypoint.
+    """
+    pts = [(float(x), float(y)) for x, y in vertices]
+    if not pts:
+        return None
+    from sxjm_core.geometry import min_enclosing_circle
+    center, radius = min_enclosing_circle(pts)
+    if radius > float(clear_radius) + 1e-9:
+        return None
+    return (center, float(radius))
+
+
 @dataclass(frozen=True)
 class LocalizationCostModel:
     """Offline-fit expected localisation cost ``L̂ = a0 + a1·r_MEC + a2·diam +
@@ -178,6 +221,14 @@ class RouteEstimator:
             best = min(best, _dist(a, c) + _dist(c, b) - _dist(a, b))
         return max(0.0, best)
 
+    @staticmethod
+    def clear_detour_value(
+        future_route_saving: float, detour_delta: float, offset: float = 5.0
+    ) -> float:
+        """Value of making a guaranteed clear detour (``V_clear``)."""
+        denominator = max(0.0, float(detour_delta)) + max(0.0, float(offset))
+        return float(future_route_saving) / denominator if denominator > 0.0 else inf
+
     # -- uncertain neighbourhoods (TSPN) -----------------------------------
 
     def tspn_route(
@@ -192,6 +243,22 @@ class RouteEstimator:
         idx, length, exact = self._solve(start_cost, cost)
         loc = sum(nb.localization_cost for nb in neigh)
         return RoutePlan([neigh[i].center for i in idx], length, exact, localization_cost=loc)
+
+    def guaranteed_clear_route(
+        self,
+        start: Point,
+        feasible: Sequence[Neighborhood],
+        clear_radius: float,
+    ) -> Optional[RoutePlan]:
+        """Route through guaranteed-clear sets, dropping no uncertain target.
+
+        If any ``K_i`` is empty, no sound guaranteed-clear route exists and
+        ``None`` is returned; callers must then keep sensing/localising.
+        """
+        clear_sets = [guaranteed_clear_neighborhood(n, clear_radius) for n in feasible]
+        if any(n is None for n in clear_sets):
+            return None
+        return self.tspn_route(start, [n for n in clear_sets if n is not None])
 
     # -- reference (M6 cross-check) ----------------------------------------
 

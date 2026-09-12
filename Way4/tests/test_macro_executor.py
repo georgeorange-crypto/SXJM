@@ -15,6 +15,7 @@ from way4.core import (
 )
 from way4.core.observation import Observation
 from way4.executor import MacroExecutor
+from way4.channels import AdaptiveScanSession, ChannelScheduler
 
 
 class FakeEnv:
@@ -52,6 +53,18 @@ def test_macro_expands_to_primitives():
     assert [p.kind for p in prims] == [PrimitiveKind.MEASURE] * 3
     assert [p.channel for p in prims] == [3, 7, 1]
     assert all(p.target == (10.0, 0.0) for p in prims)   # batch scan: one waypoint
+
+
+def test_execute_adaptive_replans_after_each_measure():
+    env = FakeEnv()
+    belief = BeliefState(n_channels=3)
+    cert = CertificateManager(n_channels=3)
+    ex = MacroExecutor(env, belief=belief, certificate=cert)
+    session = AdaptiveScanSession(ChannelScheduler(), (0.0, 0.0), belief, cert, 1,
+                                  min_value=0.0)
+    result = ex.execute_adaptive(session, RobotState(), max_scans=3)
+    assert len(result.primitives) == 3
+    assert len({p.primitive.channel for p in result.primitives}) == 3
 
     c = MacroCandidate(MacroActionType.CLEAR, (5.0, 5.0), clear_channel=4)
     assert [p.kind for p in c.primitives()] == [PrimitiveKind.CLEAR]

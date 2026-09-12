@@ -61,6 +61,8 @@ class OmniChannelCertificate:
     channel: int
     negative_scan_points: List[Point] = field(default_factory=list)
     heuristic_coverage_ratio: float = 0.0
+    coverage_debt: float = 1.0
+    uncovered_area: float = 0.0
     hard_complete: bool = False                       # arbitrary-disc-cover verdict (sticky True)
     completion_source: Optional[CertificateSource] = None
     active_scan_count: int = 0                        # real NO_SIGNAL scans folded in
@@ -68,6 +70,17 @@ class OmniChannelCertificate:
     present: bool = False                             # a positive obs stopped certificate work
     visited_anchor_idx: Set[int] = field(default_factory=set)
     _hard_checked_count: int = -1                     # scan count at last nominal verify
+
+
+@dataclass(frozen=True)
+class CardinalityState:
+    """Sound global 10..16 source-count bounds over the 20 channels."""
+
+    present: int
+    absent: int
+    unknown: int
+    q_min: int
+    q_max: int
 
 
 class CertificateManager:
@@ -158,6 +171,8 @@ class CertificateManager:
         cert.active_scan_count += 1
         self.map.add_no_signal(channel, p)
         cert.heuristic_coverage_ratio = self.map.coverage_ratio(channel)
+        cert.coverage_debt = max(0.0, 1.0 - cert.heuristic_coverage_ratio)
+        cert.uncovered_area = float(len(self.map.remaining_holes(channel))) * self.map.spacing ** 2
 
         # legacy backbone bookkeeping: which fixed anchors has this channel reached?
         for j, a in enumerate(self.anchors):
@@ -253,6 +268,27 @@ class CertificateManager:
             return False
         return len(self._present) >= self.max_sources
 
+    def cardinality_state(self) -> CardinalityState:
+        """Return the complete remaining-source interval.
+
+        ``present`` is deliberately sourced only from real positive observations
+        or clears; ``absent`` is sourced only from hard certifications.  The
+        interval is therefore safe for planning and future lifecycle propagation.
+        """
+        present = len(self._present)
+        absent = sum(
+            1 for cert in self.certs.values()
+            if not cert.present and self.is_absent_certified(cert.channel, force=False)
+        )
+        unknown = max(0, self.n_channels - present - absent)
+        return CardinalityState(
+            present=present,
+            absent=absent,
+            unknown=unknown,
+            q_min=max(0, 10 - present),
+            q_max=min(unknown, max(0, 16 - present)),
+        )
+
     # -- combined queries (§6.4) -------------------------------------------
 
     def hard_coverage_complete(self, channel: int, force: bool = False) -> bool:
@@ -290,10 +326,46 @@ class CertificateManager:
                     newly.append(c)
         return newly
 
+    def apply_cardinality_presence(self, belief: "BeliefState") -> List[int]:
+        """Propagate PRESENT_UNOBSERVED only when every remaining unknown is forced present.
+
+        If ``q_min == unknown`` then the lower cardinality bound proves each
+        remaining channel contains a source.  A weaker ``q_min > 0`` does not
+        identify which channel and therefore performs no per-channel mutation.
+        """
+        state = self.cardinality_state()
+        if state.unknown == 0 or state.q_min != state.unknown:
+            return []
+        newly: List[int] = []
+        for c in range(1, self.n_channels + 1):
+            if self.is_absent_certified(c, force=False):
+                continue
+            if belief[c].mark_present_unobserved():
+                newly.append(c)
+        return newly
+
     # -- planner-facing heuristics (never certify) -------------------------
 
     def heuristic_coverage_ratio(self, channel: int) -> float:
         return self.map.coverage_ratio(channel)
+
+    def coverage_debt(self, channel: int) -> float:
+        """Normalised remaining heuristic coverage debt (planner-only)."""
+        return self.certs[channel].coverage_debt
+
+    def uncovered_area(self, channel: int) -> float:
+        return self.certs[channel].uncovered_area
+
+    def coverage_snapshot(self, channel: int) -> Dict[str, float]:
+        """Unified planner/trace view of coverage state; never a certificate."""
+        cert = self.certs[channel]
+        return {
+            "coverage_ratio": float(cert.heuristic_coverage_ratio),
+            "coverage_debt": float(cert.coverage_debt),
+            "uncovered_area": float(cert.uncovered_area),
+            "active_scan_count": float(cert.active_scan_count),
+            "backbone_anchor_count": float(cert.fallback_anchor_count),
+        }
 
     def coverage_gain(self, channel: int, q: Point) -> float:
         return self.map.coverage_gain(channel, q)

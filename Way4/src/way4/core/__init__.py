@@ -12,8 +12,10 @@ from .actions import (
     Primitive,
     PrimitiveKind,
     SpatialStop,
+    get_allowed_actions,
 )
 from .cost import AnalyticalCostModel, RobotState
+from .events import EventBus, EventType, OptionTransition, Way4Event, transition_dataset
 
 __all__ = [
     "Observation",
@@ -23,6 +25,12 @@ __all__ = [
     "Primitive",
     "PrimitiveKind",
     "SpatialStop",
+    "get_allowed_actions",
     "AnalyticalCostModel",
     "RobotState",
+    "EventType",
+    "EventBus",
+    "transition_dataset",
+    "Way4Event",
+    "OptionTransition",
 ]

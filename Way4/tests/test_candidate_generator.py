@@ -27,6 +27,15 @@ def _by_type(cands, t):
     return [c for c in cands if c.action_type == t]
 
 
+def test_cardinality_forced_channel_gets_initialize_option():
+    belief, cert = _fresh(3)
+    belief[1].status = ChannelStatus.PRESENT_UNOBSERVED
+    cands = CandidateGenerator(max_explore=4).generate(
+        belief, cert, RobotState()
+    )
+    assert any(c.action_type is MacroActionType.INITIALIZE for c in cands)
+
+
 # -- CLEAR --------------------------------------------------------------------
 
 

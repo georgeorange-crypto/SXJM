@@ -40,6 +40,16 @@ def test_no_signal_accumulates_and_never_present():
     assert mgr.is_absent_certified(3, force=True) is False
 
 
+def test_directional_no_signal_never_uses_omni_absence_certificate():
+    """P4 blind-arc NO_SIGNAL is not evidence of absence by itself."""
+    mgr = CertificateManager(problem=4, fallback_anchors=[])
+    mgr._verifier.is_covered = lambda pts: True  # type: ignore[assignment]
+    for p in _grid(400.0, 2000.0):
+        _feed_no_signal(mgr, 3, [p])
+    assert mgr.certs[3].hard_complete is False
+    assert mgr.is_absent_certified(3, force=True) is False
+
+
 def test_positive_stops_certificate_and_ignores_later_no_signal():
     mgr = CertificateManager()
     mgr.record_observation(7, (100.0, 0.0), Observation.bearing(42.0))

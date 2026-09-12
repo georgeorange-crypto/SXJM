@@ -15,6 +15,7 @@ import pytest
 from way4.routing import (
     LocalizationCostModel,
     Neighborhood,
+    guaranteed_clear_point,
     RouteEstimator,
     brute_force_open,
     held_karp_min_path,
@@ -132,6 +133,25 @@ def test_localization_cost_model_monotone():
     assert m.estimate(r_mec=200.0, diameter=200.0, sin_gamma=1.0) > base   # larger MEC costs more
     assert m.estimate(r_mec=100.0, diameter=400.0, sin_gamma=1.0) > base   # larger region costs more
     assert m.estimate(r_mec=100.0, diameter=200.0, sin_gamma=0.1) > base   # worse crossing costs more
+
+
+def test_guaranteed_clear_route_uses_K_sets_and_declines_when_empty():
+    est = RouteEstimator()
+    feasible = [Neighborhood((100.0, 0.0), radius=10.0),
+                Neighborhood((300.0, 0.0), radius=30.0)]
+    route = est.guaranteed_clear_route((0.0, 0.0), feasible, clear_radius=50.0)
+    assert route is not None
+    assert route.order == [(100.0, 0.0), (300.0, 0.0)]
+    assert est.guaranteed_clear_route((0.0, 0.0), feasible, clear_radius=20.0) is None
+
+
+def test_polygon_vertex_K_certificate_is_conservative():
+    square = [(-10.0, -10.0), (10.0, -10.0), (10.0, 10.0), (-10.0, 10.0)]
+    cert = guaranteed_clear_point(square, clear_radius=15.0)
+    assert cert is not None
+    assert cert[0] == pytest.approx((0.0, 0.0))
+    assert cert[1] == pytest.approx(14.1421356)
+    assert guaranteed_clear_point(square, clear_radius=10.0) is None
 
 
 def test_empty_and_singleton_routes():

@@ -1,0 +1,29 @@
+{
+  "release": "way4-deterministic-expert-v1",
+  "algorithm": "Certificate-Guided Active Belief Planning",
+  "learner_role": "Learning-Augmented Planner",
+  "expert_authority": "math_planner",
+  "action_vocabulary": [
+    "SCAN",
+    "REFINE",
+    "CLEAR",
+    "COVERAGE",
+    "EXIT"
+  ],
+  "full_clear_guard": "SafetyShield/EXIT guard; learner cannot bypass",
+  "source_sha256": {
+    "src\\way4\\pipeline.py": "ee40134db1f5091012edc7a8008213ad31f65a98bb7543521175dc145b8a52a0",
+    "src\\way4\\planner\\receding_horizon.py": "c0ab4c25588454ad166033526c2b6e6fe8dd0830eec9be64e2f322944e39c449",
+    "src\\way4\\planner\\candidates.py": "1a0be932cd83483947bc27a04d0c0ec3f935fd0616f4b95ac114cd83f6c88add",
+    "src\\way4\\sensing\\nbv.py": "31520b780331fb73b9e199c483208d4c04a0f4d9fa52b7b490e0959d620d93a1",
+    "src\\way4\\certificate\\manager.py": "c8275e8a74867bb94805c1545dbfc98a288d0a2ca22e677d28ef2ef19cfae159"
+  },
+  "gate_artifact": "results/way4_p4_gate_2000_2009.json",
+  "trace_command": "python scripts/run_way4_traces.py runs/expert_traces 1000 1001 1002",
+  "expert_trace_files": [
+    "runs\\expert_traces\\way4_detailed_trace_seed_1000.json",
+    "runs\\expert_traces\\way4_detailed_trace_seed_1001.json",
+    "runs\\expert_traces\\way4_detailed_trace_seed_1002.json"
+  ],
+  "generated_by": "scripts/build_expert_release.py"
+}

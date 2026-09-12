@@ -45,6 +45,20 @@ class Decision:
     chosen: int                     # sampled index into the candidate list
     temperature: float
 
+    def to_record(self) -> dict:
+        return {
+            "features": self.features,
+            "q_math": self.q_math,
+            "chosen": int(self.chosen),
+            "temperature": float(self.temperature),
+            "n_candidates": len(self.q_math),
+        }
+
+
+def expert_dataset(decisions: Sequence[Decision]) -> List[dict]:
+    """Export all candidate scores/features, not only selected actions."""
+    return [d.to_record() for d in decisions]
+
 
 class SamplingResidualPlanner:
     """REINFORCE-time planner: samples a candidate under the residual policy and

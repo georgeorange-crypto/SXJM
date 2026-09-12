@@ -35,6 +35,25 @@ class MacroActionType(str, Enum):
     STOP = "STOP"              # P0 spatial planner: a location-first multi-service bundle
 
 
+def get_allowed_actions(channel_state, global_state=None):
+    """Single read-only action mask for a channel lifecycle state.
+
+    ``channel_state`` may be a ``ChannelStatus`` or its string value.  The mask
+    is advisory for candidate generation; safety/certificate ownership remains
+    with the executor and certificate manager.
+    """
+    value = getattr(channel_state, "value", channel_state)
+    if value in ("CLEARED", "ABSENT_CERTIFIED"):
+        return frozenset()
+    if value == "LOCALIZED":
+        return frozenset({MacroActionType.CLEAR, MacroActionType.STOP})
+    if value in ("DETECTED", "INITIALIZED"):
+        return frozenset({MacroActionType.REFINE, MacroActionType.PURSUE, MacroActionType.CLEAR, MacroActionType.STOP})
+    if value == "PRESENT_UNOBSERVED":
+        return frozenset({MacroActionType.INITIALIZE, MacroActionType.EXPLORE, MacroActionType.STOP})
+    return frozenset({MacroActionType.EXPLORE, MacroActionType.VERIFY, MacroActionType.STOP})
+
+
 class PrimitiveKind(str, Enum):
     """A low-level environment command."""
 

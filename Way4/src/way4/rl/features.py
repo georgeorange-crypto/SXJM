@@ -57,10 +57,12 @@ _ACTION_INDEX = {a: i for i, a in enumerate(_ACTION_ORDER)}
 #: Per-candidate block width = one-hot(7) + gains(4) + (immediate, future, q)(3)
 #: + scan_frac(1) + travel(1) + is_scan(1).
 CANDIDATE_FEATURE_DIM = len(_ACTION_ORDER) + 4 + 3 + 1 + 1 + 1
-#: Global belief-context block: present/clearable/unknown/resolved fractions(4)
-#: + robot xy(2) + n_candidates(1).
-GLOBAL_FEATURE_DIM = 4 + 2 + 1
-#: Full input vector = per-candidate block ++ global block.
+CHANNEL_FEATURE_DIM = 5  # area, diameter, kappa, coverage debt, readiness
+#: Global/context block: base global features (7) plus selected-channel geometry
+#: (effective area, diameter, kappa, coverage debt, readiness).
+GLOBAL_FEATURE_DIM = 4 + 2 + 1 + CHANNEL_FEATURE_DIM
+# channel block is included in the default evaluation vector.
+#: Full input vector = per-candidate ++ global ++ selected-channel geometry.
 FEATURE_DIM = CANDIDATE_FEATURE_DIM + GLOBAL_FEATURE_DIM
 
 
@@ -141,7 +143,24 @@ def evaluation_features(evaluation, belief, state, *, n_candidates: int) -> List
     )
     glob = global_block(belief, state)
     glob.append(float(n_candidates) / NOMINAL_CANDS)
-    return cand + glob
+    return cand + glob + channel_context_block(evaluation, belief, state)
+
+
+def channel_context_block(evaluation, belief, state, certificate=None) -> List[float]:
+    """Optional per-channel geometry block for learning-augmented planners."""
+    candidate = evaluation.candidate
+    channel = candidate.meta.get("refine_channel")
+    if channel is None and candidate.scan_channels:
+        channel = candidate.scan_channels[0]
+    if channel is None or channel not in belief.channels:
+        return [0.0] * CHANNEL_FEATURE_DIM
+    b = belief[channel]
+    area = min(1.0, max(0.0, b.effective_area(spacing=60.0) / (3.141592653589793 * ARENA_R ** 2)))
+    diameter = min(2.0, max(0.0, b.effective_diameter(spacing=60.0) / ARENA_R))
+    kappa = min(20.0, max(1.0, float(getattr(b, "kappa", 1.0)))) / 20.0
+    debt = certificate.coverage_debt(channel) if certificate is not None else 0.0
+    readiness = float(getattr(b, "initialization_ready", False))
+    return [area, diameter, kappa, float(debt), readiness]
 
 
 def feature_matrix(evaluations: Sequence, belief, state) -> List[List[float]]:

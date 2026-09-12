@@ -48,6 +48,14 @@ def test_j_localization_uses_fitted_cost_and_is_monotone():
     assert j_big > j_small                                          # larger MEC => costlier
 
 
+def test_j_localization_penalizes_uncertain_crossing_geometry():
+    loc = LocalizationCostModel(a0=0.0, a3=30.0)
+    fce = FutureCostEstimator(loc_model=loc)
+    good = CostView((0.0, 0.0), detected=[DetectedRegion((0.0, 0.0), 100.0, 200.0, 1.0)])
+    bad = CostView((0.0, 0.0), detected=[DetectedRegion((0.0, 0.0), 100.0, 200.0, 0.1)])
+    assert fce.estimate(bad).j_localization > fce.estimate(good).j_localization
+
+
 def test_j_certificate_greedy_cover_stop_count():
     fce = FutureCostEstimator(detection_radius=1000.0, measure_s=5.0)
     anchors = [(0.0, 0.0), (3000.0, 0.0)]
@@ -107,3 +115,11 @@ def test_build_cost_view_snapshots_belief():
     assert v.n_unknown == 2
     assert v.unknown_holes                            # fresh UNKNOWN channels => holes exist
     assert v.anchors                                  # fallback template present
+
+
+def test_build_cost_view_counts_cardinality_forced_present_as_pending_work():
+    belief = BeliefState(n_channels=4)
+    cert = CertificateManager(n_channels=4)
+    belief[1].mark_present_unobserved()
+    v = build_cost_view(belief, cert, RobotState(0.0, 0.0))
+    assert v.n_unknown == 4

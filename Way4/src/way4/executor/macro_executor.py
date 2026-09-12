@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Protocol, Tuple
 
-from ..core.actions import MacroCandidate, Primitive, PrimitiveKind
+from ..core.actions import MacroActionType, MacroCandidate, Primitive, PrimitiveKind
 from ..core.cost import AnalyticalCostModel, RobotState, _us
 from ..core.observation import Observation, ObservationKind
 
@@ -136,6 +136,35 @@ class MacroExecutor:
                     break
 
         return ExecutionResult(state=state, primitives=results, stopped_early=stopped, finished=finished)
+
+    def execute_adaptive(self, session, state: RobotState,
+                         time_budget_s: float = float("inf"), max_scans: int = 20) -> ExecutionResult:
+        """Execute a waypoint-local ``AdaptiveScanSession`` to STOP/deadline.
+
+        Each measurement is executed and folded before ``session.choose`` is
+        called again, so the next channel is selected from the updated belief and
+        certificate rather than from a stale batch.
+        """
+        results: List[PrimitiveResult] = []
+        current = state
+        for _ in range(int(max_scans)):
+            plan = session.choose()
+            if plan.is_empty:
+                break
+            channel = plan.channels[0]
+            macro = MacroCandidate(
+                action_type=MacroActionType.EXPLORE,
+                target=session.q,
+                scan_channels=(channel,),
+            )
+            out = self.execute(macro, current, time_budget_s)
+            results.extend(out.primitives)
+            current = out.state
+            if out.primitives and out.primitives[-1].observation is not None:
+                session.observe(channel)
+            if out.finished or out.stopped_early:
+                return ExecutionResult(current, results, out.stopped_early, out.finished)
+        return ExecutionResult(current, results, False, False)
 
     def _scan_redundant(self, channel: int) -> bool:
         """True iff re-measuring ``channel`` would add nothing because it is already

@@ -30,8 +30,38 @@ from typing import List, Optional, Sequence
 from sxjm_core.geometry import Point, dist
 
 from ..channels import SchedulerMode
+from ..belief import ChannelStatus
 from ..core import AnalyticalCostModel, MacroActionType, RobotState, SpatialStop
 from .candidates import CandidateGenerator
+
+
+class InformationRidge:
+    """Shared spatial value field for multi-channel sensing.
+
+    The ridge is deliberately a planner-only score: it aggregates per-channel
+    marginal coverage/refinement value on common points, so overlapping tasks can
+    produce one shared waypoint instead of one waypoint per channel.
+    """
+
+    def __init__(self, scheduler=None):
+        self.scheduler = scheduler
+
+    def score(self, point, belief, certificate) -> float:
+        total = 0.0
+        for c in range(1, belief.n_channels + 1):
+            b = belief[c]
+            if b.status in (ChannelStatus.CLEARED, ChannelStatus.ABSENT_CERTIFIED,
+                            ChannelStatus.LOCALIZED):
+                continue
+            if b.status in (ChannelStatus.UNKNOWN, ChannelStatus.PRESENT_UNOBSERVED):
+                total += float(certificate.coverage_gain(c, point))
+            elif b.status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED):
+                total += float(getattr(b, "readiness_score", lambda **_: 0.0)())
+        return total
+
+    def top(self, points, belief, certificate, k=8):
+        scored = [(self.score(p, belief, certificate), p) for p in points]
+        return [p for _s, p in sorted(scored, key=lambda x: (-x[0], x[1]))[:int(k)]]
 
 
 class _Cluster:

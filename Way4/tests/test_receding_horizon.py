@@ -13,6 +13,7 @@ import pytest
 from way4.belief import BeliefState, ChannelStatus
 from way4.certificate import CertificateManager
 from way4.core import MacroActionType, MacroCandidate, RobotState
+from way4.core import EventType, Way4Event
 from way4.planner import (
     CandidateGenerator,
     CostView,
@@ -24,6 +25,15 @@ from way4.planner import (
 
 def _pick(outs, label):
     return next(o for o in outs if o.label == label)
+
+
+def test_event_replan_policy_distinguishes_batch_and_strategic_events():
+    planner = RecedingHorizonPlanner()
+    batch = Way4Event(EventType.BATCH_COMPLETED, 1.0)
+    discovery = Way4Event(EventType.POSITIVE_DISCOVERY, 1.0, channel=2)
+    assert planner.should_replan(batch, marginal_value_drop=0.1) is False
+    assert planner.should_replan(batch, marginal_value_drop=0.8) is True
+    assert planner.should_replan(discovery) is True
 
 
 # -- OutcomePredictor: terminal actions ---------------------------------------
@@ -161,3 +171,17 @@ def test_horizon2_plans_and_reuses_route_cache():
     solves_after_first = planner.fce.route.solves
     planner.plan(belief, cert, state, cands)
     assert planner.fce.route.solves == solves_after_first
+
+
+@pytest.mark.parametrize("horizon", [1, 2, 3])
+def test_horizon_ablation_matrix(horizon):
+    belief = BeliefState(n_channels=3)
+    cert = CertificateManager(n_channels=3)
+    belief[1].record_near((20.0, 0.0))
+    state = RobotState()
+    cands = CandidateGenerator().generate(belief, cert, state)
+    result = RecedingHorizonPlanner(horizon=horizon).plan(
+        belief, cert, state, cands
+    )
+    assert result.horizon == horizon
+    assert result.best is not None

@@ -31,6 +31,7 @@ from .manager import (
     CertificateManager,
     OmniChannelCertificate,
     CertificateSource,
+    CardinalityState,
 )
 
 __all__ = [
@@ -47,4 +48,5 @@ __all__ = [
     "CertificateManager",
     "OmniChannelCertificate",
     "CertificateSource",
+    "CardinalityState",
 ]

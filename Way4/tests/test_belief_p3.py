@@ -65,6 +65,35 @@ def test_no_signal_disc_excludes_points():
     assert cb.excludes((1500.0, 0.0)) is False   # outside the exclusion disc
 
 
+def test_no_signal_updates_effective_feasible_set_and_hypotheses():
+    cb = ChannelBelief(channel=11)
+    before = cb.effective_area(spacing=60.0)
+    cb.record_no_signal((0.0, 0.0))
+    after = cb.effective_area(spacing=60.0)
+    assert after < before
+    assert cb.contains_possible_source((1200.0, 0.0)) is True
+    assert cb.contains_possible_source((500.0, 0.0)) is False
+    assert all(cb.contains_possible_source(p) for p in cb.sample_effective_hypotheses(spacing=60.0))
+
+
+def test_positive_outer_geometry_and_negative_effective_geometry_are_distinct():
+    cb = ChannelBelief(channel=12)
+    cb.record_bearing((0.0, 0.0), 0.0)
+    outer_area = cb.area
+    effective_before = cb.effective_area(spacing=60.0)
+    cb.record_no_signal((500.0, 0.0))
+    assert cb.area == outer_area  # safety outer geometry is unchanged
+    assert cb.effective_area(spacing=60.0) < effective_before
+
+
+def test_geometry_summary_has_anisotropy_and_axis():
+    cb = ChannelBelief(channel=13)
+    cb.record_bearing((0.0, 0.0), 0.0)
+    assert math.isfinite(cb.kappa)
+    assert cb.principal_axis is not None
+    assert math.isclose(math.hypot(*cb.principal_axis), 1.0, rel_tol=1e-6)
+
+
 # --- the true-source-never-excluded property --------------------------------
 
 
@@ -137,6 +166,43 @@ def test_near_makes_clearable_and_present():
     assert cb.is_clearable is True
     assert _dist(cb.clear_target, source) <= cb.mec_radius + 1e-6
     assert _dist(cb.clear_target, source) < 20.0
+
+
+def test_cardinality_forced_presence_lifecycle():
+    cb = ChannelBelief(channel=14)
+    assert cb.mark_present_unobserved() is True
+    assert cb.status == ChannelStatus.PRESENT_UNOBSERVED
+    assert cb.is_present is True
+    cb.record_bearing((0.0, 0.0), 0.0)
+    assert cb.status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED, ChannelStatus.LOCALIZED)
+
+
+def test_initialization_requires_non_degenerate_bearing_baseline():
+    cb = ChannelBelief(1)
+    cb.record_bearing((0.0, 0.0), 10.0)
+    cb.record_bearing((100.0, 0.0), 12.0)
+    assert cb.initialization_ready is False
+    assert cb.status is ChannelStatus.DETECTED
+    cb.record_bearing((200.0, 0.0), 40.0)
+    assert cb.initialization_ready is True
+    assert cb.status in (ChannelStatus.INITIALIZED, ChannelStatus.LOCALIZED)
+
+
+def test_readiness_score_is_bounded_and_penalizes_travel():
+    cb = ChannelBelief(1)
+    cb.record_bearing((0.0, 0.0), 0.0)
+    cb.record_bearing((100.0, 0.0), 45.0)
+    near = cb.readiness_score((0.0, 0.0), coverage_debt=0.0)
+    far = cb.readiness_score((1800.0, 1800.0), coverage_debt=1.0)
+    assert 0.0 <= far <= near <= 1.0
+
+
+def test_effective_geometry_reports_connected_components():
+    cb = ChannelBelief(1)
+    cb.record_no_signal((0.0, 0.0))
+    cb.record_no_signal((1200.0, 0.0))
+    assert cb.connected_components >= 1
+    assert cb.effective_components(spacing=120.0) == cb.connected_components
 
 
 def test_status_progression_unknown_detected_localized():

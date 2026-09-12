@@ -13,6 +13,7 @@ from .channel import (
     BeliefState,
     PRESENT_STATES,
     RESOLVED_STATES,
+    EffectiveRegion,
 )
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     "BeliefState",
     "PRESENT_STATES",
     "RESOLVED_STATES",
+    "EffectiveRegion",
 ]

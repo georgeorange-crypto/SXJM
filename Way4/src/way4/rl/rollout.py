@@ -80,6 +80,7 @@ def make_way4_rollout(problem: int = 4, field_kind: str = "smooth", max_steps: i
             full_clear=full_clear,
             virtual_time_s=result.virtual_time_s,
             n_unresolved=n_unresolved,
+            transitions=list(pipe.transitions),
         )
 
     return rollout

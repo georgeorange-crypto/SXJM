@@ -1,5 +1,11 @@
 # Way4 冻结设计基线 (Frozen Design Baseline)
 
+## 最终算法命名
+
+论文与评测统一使用 **Certificate-Guided Active Belief Planning**（基于集合
+信念与完备性证书的主动滚动规划）。RL 组件统一称为 **Learning-Augmented
+Planner**，不将最终算法命名为 PPO Method。
+
 **方法名**：Set-Membership Belief-Based Active Multi-Target Search with Certificate-Constrained Adaptive Routing
 **目标分支**：`way4`（从 `origin/way3` 派生，见 §2）
 **本文状态**：设计冻结基线，**已审阅通过并 Greenlight（2026-09-11）**。所有物理/协议数字引自 `附件2.txt` + `B题(1).pdf`（行号标注），已与仓库现状对账（§2）。**DECISION-1=采纳**（P3 任意扫描点 hard 证书，§6）；**DECISION-2=Greenlight**（授权按 §6 尾实现顺序开工，§17）。审阅补入的三项修订（Conservatism note A/B、Resolution+rescue、Cardinality Invariant D）已写入 §6。

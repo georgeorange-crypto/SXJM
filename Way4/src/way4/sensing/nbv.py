@@ -48,6 +48,7 @@ from typing import List, Optional, Sequence, Tuple
 
 from sxjm_core.geometry import (
     Point,
+    angle_sep_deg,
     bearing_deg,
     disc_superset_halfplanes,
     dist,
@@ -178,6 +179,20 @@ class MinimaxNBV:
                 cands.append((center[0] + px * s, center[1] + py * s))
                 cands.append((center[0] - px * s, center[1] - py * s))
 
+        # 3) shape-adaptive stand-offs.  For a thin feasible set, a viewpoint
+        # displaced across the principal axis is more informative than another
+        # point along its long direction.  For round sets use the ordinary ring
+        # pool above; this branch only changes the candidate set, never the
+        # sound outer belief or the certificate.
+        axis = getattr(channel, "principal_axis", None)
+        kappa = float(getattr(channel, "kappa", 1.0))
+        if axis is not None and kappa >= 8.0:
+            ax, ay = float(axis[0]), float(axis[1])
+            nx, ny = -ay, ax
+            for s in self.perp_standoffs:
+                cands.append((center[0] + nx * s, center[1] + ny * s))
+                cands.append((center[0] - nx * s, center[1] - ny * s))
+
         # bound to the robot domain, dedup
         out: List[Point] = []
         seen = set()
@@ -233,7 +248,12 @@ class MinimaxNBV:
         if not poly or len(poly) < 3:
             return None
         current = polygon_diameter(poly)
-        hyps = self.representative_hypotheses(poly)
+        effective_sampler = getattr(channel, "sample_effective_hypotheses", None)
+        hyps = effective_sampler(limit=self.n_hypotheses, spacing=60.0) if effective_sampler else []
+        # Keep the analytic polygon representative fallback for legacy duck-typed
+        # beliefs; native ChannelBelief uses effective hypotheses above.
+        if not hyps:
+            hyps = self.representative_hypotheses(poly)
         if not hyps:
             return None
         cands = self.candidate_viewpoints(channel, robot_pos)
@@ -278,6 +298,53 @@ class MinimaxNBV:
                     improved=u < current - 1e-9,
                 )
         return best
+
+    def completion_point(self, channel, robot_pos: Point, kill_radius: float = 20.0) -> Optional[Point]:
+        """Return a candidate whose robust post-measurement diameter fits kill radius."""
+        poly = channel.F_c
+        if not poly:
+            return None
+        current = polygon_diameter(poly)
+        hyps = channel.sample_effective_hypotheses(self.n_hypotheses, 60.0) \
+            if hasattr(channel, "sample_effective_hypotheses") else self.representative_hypotheses(poly)
+        best = None
+        for q in self.candidate_viewpoints(channel, robot_pos):
+            if any(dist(q, s) <= self.exclude_scanned_eps for s in
+                   [(b.point[0], b.point[1]) for b in getattr(channel, "bearings", [])]):
+                continue
+            post = self.worst_case_diameter(poly, q, hyps, current)
+            key = (post, self.travel_time(robot_pos, q))
+            if best is None or key < best[0]:
+                best = (key, q)
+        return None if best is None or best[0][0] > 2.0 * kill_radius else best[1]
+
+    def verification_point(self, channel, robot_pos: Point, coverage_gain=None) -> Optional[Point]:
+        """Choose the candidate maximizing NO_SIGNAL coverage/certificate gain."""
+        cands = self.candidate_viewpoints(channel, robot_pos)
+        holes = getattr(channel, "negative_discs", [])
+        if not cands:
+            return None
+        if coverage_gain is None:
+            # A geometry-only fallback: prefer the point nearest the effective set.
+            return min(cands, key=lambda q: min((dist(q, d.center) for d in holes), default=0.0))
+        scored = [(float(coverage_gain(q)), self.travel_time(robot_pos, q), q) for q in cands]
+        return max(scored, key=lambda x: (x[0], -x[1]))[2]
+
+    def initialization_point(self, channel, robot_pos: Point) -> Optional[Point]:
+        """Choose a point maximizing bearing crossing quality for INITIALIZED state."""
+        cands = self.candidate_viewpoints(channel, robot_pos)
+        bearings = getattr(channel, "bearings", []) or []
+        if not cands or not bearings:
+            return None
+        scored = []
+        for q in cands:
+            if any(dist(q, b.point) <= self.exclude_scanned_eps for b in bearings):
+                continue
+            from math import sin, radians
+            los = bearing_deg(q, channel.mec_center or q)
+            crossing = max(abs(sin(radians(angle_sep_deg(b.svd_deg, los)))) for b in bearings)
+            scored.append((crossing, -self.travel_time(robot_pos, q), q))
+        return max(scored)[2] if scored else None
 
 
 # --- helpers -----------------------------------------------------------------

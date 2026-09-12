@@ -34,6 +34,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from sxjm_core.geometry import angle_sep_deg, bearing_deg, dist, polygon_centroid
 
 from ..belief import ChannelStatus
+from ..core.actions import MacroActionType, get_allowed_actions
 
 Point = Tuple[float, float]
 
@@ -53,10 +54,53 @@ class ScanPlan:
     dwell_time_s: float = 0.0
     n_switch: int = 0
     ratio: float = 0.0
+    stop_reason: str = ""
+    stop_value: float = 0.0
 
     @property
     def is_empty(self) -> bool:
         return not self.channels
+
+
+class AdaptiveScanSession:
+    """Select one scan at a time and rerank after each observation."""
+
+    def __init__(self, scheduler, q, belief, certificate, current_channel,
+                 mode=SchedulerMode.EARLY, min_value=1e-9):
+        self.scheduler = scheduler
+        self.q = q
+        self.belief = belief
+        self.certificate = certificate
+        self.current_channel = current_channel
+        self.mode = mode
+        self.min_value = float(min_value)
+        self.scanned = set()
+
+    def choose(self) -> ScanPlan:
+        ranked = []
+        for c in range(1, self.belief.n_channels + 1):
+            if c in self.scanned:
+                continue
+            value, allowed = self.scheduler.channel_value(
+                c, self.q, self.belief, self.certificate
+            )
+            if allowed and value > self.min_value:
+                ranked.append((float(value), c))
+        if not ranked:
+            return ScanPlan([], stop_reason="no_positive_voi", stop_value=0.0)
+        value, channel = max(ranked, key=lambda x: (x[0], x[1] == self.current_channel))
+        switched = int(channel != self.current_channel)
+        return ScanPlan(
+            [channel], value=value,
+            dwell_time_s=self.scheduler.measure_s + switched * self.scheduler.switch_s,
+            n_switch=switched,
+            stop_reason="continue_scan",
+            stop_value=float(value),
+        )
+
+    def observe(self, channel: int) -> None:
+        self.scanned.add(int(channel))
+        self.current_channel = int(channel)
 
 
 class ChannelScheduler:
@@ -67,8 +111,10 @@ class ChannelScheduler:
         switch_s: float = 1.0,
         w_certificate: float = 1.0,   # weight on UNKNOWN coverage/discover value
         w_refine: float = 1.0,        # weight on DETECTED bearing-shrink value
+        w_scan_debt: float = 0.25,
         early_cap: int = 20,
         mid_cap: int = 6,
+        starvation_limit: int = 8,
         eps: float = 1e-9,
     ) -> None:
         self.range_radius = float(range_radius)
@@ -76,11 +122,53 @@ class ChannelScheduler:
         self.switch_s = float(switch_s)
         self.w_certificate = float(w_certificate)
         self.w_refine = float(w_refine)
+        self.w_scan_debt = float(w_scan_debt)
         self.early_cap = int(early_cap)
         self.mid_cap = int(mid_cap)
+        self.starvation_limit = int(starvation_limit)
+        self._skip_count: Dict[int, int] = {}
         self.eps = float(eps)
 
     # -- per-channel value (each term normalised to [0,1]) -----------------
+
+    def value_components(self, channel: int, q: Point, belief, certificate) -> Dict[str, float]:
+        """Unified per-channel value decomposition V_E,V_I,V_R,V_C,V_D."""
+        b = belief[channel]
+        discovery = initialization = refinement = certificate_value = 0.0
+        debt = self.scan_debt(b, certificate=certificate)
+        if b.status == ChannelStatus.UNKNOWN:
+            discovery = certificate.coverage_gain(channel, q) if certificate is not None else 0.0
+            certificate_value = discovery
+        elif b.status == ChannelStatus.PRESENT_UNOBSERVED:
+            initialization = certificate.coverage_gain(channel, q) if certificate is not None else 0.0
+            certificate_value = initialization
+        elif b.status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED):
+            refinement = self._refine_proxy(b, q)
+        return {"V_E": float(discovery), "V_I": float(initialization),
+                "V_R": float(refinement), "V_C": float(certificate_value),
+                "V_D": float(debt)}
+
+    def scan_debt(self, channel_belief, *, certificate=None, now_s=None) -> float:
+        """Continuous starvation debt: residual coverage, elapsed time and
+        incomplete scan history. Resolved channels carry zero debt."""
+        if channel_belief.status in (ChannelStatus.CLEARED,
+                                     ChannelStatus.ABSENT_CERTIFIED,
+                                     ChannelStatus.LOCALIZED):
+            return 0.0
+        coverage = certificate.coverage_debt(channel_belief.channel) if certificate is not None else 1.0
+        elapsed = 0.0
+        if now_s is not None:
+            elapsed = max(0.0, float(now_s) - float(channel_belief.last_scan_time)) / 300.0
+        completeness = 1.0 / (1.0 + float(channel_belief.scan_count))
+        return 0.5 * max(0.0, float(coverage)) + 0.3 * min(1.0, elapsed) + 0.2 * completeness
+
+    def eta(self, channel: int, q: Point, belief, certificate, current_channel: int) -> float:
+        """Value per marginal sensing time (measure + optional switch)."""
+        comp = self.value_components(channel, q, belief, certificate)
+        value = comp["V_E"] + comp["V_I"] + comp["V_R"] + comp["V_C"]
+        value += self.w_scan_debt * comp["V_D"] * max(comp["V_E"], comp["V_I"], 0.0)
+        cost = self.measure_s + (0.0 if int(channel) == int(current_channel) else self.switch_s)
+        return value / cost if cost > 0 else 0.0
 
     def _refine_proxy(self, channel_belief, q: Point) -> float:
         """Cheap DETECTED-channel shrink value at ``q``: the best crossing quality
@@ -105,13 +193,18 @@ class ChannelScheduler:
         must never be scanned again (CLEARED / ABSENT_CERTIFIED / LOCALIZED→clear)."""
         b = belief[channel]
         st = b.status
-        if st in (ChannelStatus.CLEARED, ChannelStatus.ABSENT_CERTIFIED, ChannelStatus.LOCALIZED):
+        allowed = get_allowed_actions(st)
+        if st in (ChannelStatus.CLEARED, ChannelStatus.ABSENT_CERTIFIED, ChannelStatus.LOCALIZED) \
+                or MacroActionType.EXPLORE not in allowed and MacroActionType.REFINE not in allowed:
             return 0.0, False
         if st == ChannelStatus.UNKNOWN:
-            gain = certificate.coverage_gain(channel, q) if certificate is not None else 0.0
-            return self.w_certificate * gain, True
-        if st == ChannelStatus.DETECTED:
-            return self.w_refine * self._refine_proxy(b, q), True
+            comp = self.value_components(channel, q, belief, certificate)
+            return comp["V_E"] * (self.w_certificate + self.w_scan_debt * comp["V_D"]), True
+        if st == ChannelStatus.PRESENT_UNOBSERVED:
+            comp = self.value_components(channel, q, belief, certificate)
+            return max(comp["V_I"], self.eps) * (self.w_certificate + self.w_scan_debt * comp["V_D"]), True
+        if st in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED):
+            return self.w_refine * self.value_components(channel, q, belief, certificate)["V_R"], True
         return 0.0, False
 
     # -- dwell economics ----------------------------------------------------
@@ -132,6 +225,33 @@ class ChannelScheduler:
         num = sum(values[c] for c in channels)
         dwell, _ = self._dwell(channels, current_channel)
         return num / dwell if dwell > 0 else 0.0
+
+    def starvation_debt(self, channel: int) -> int:
+        return int(self._skip_count.get(int(channel), 0))
+
+    def debt_snapshot(self, channel: int, belief, certificate, now_s=None) -> Dict[str, float]:
+        """Unified trace view of continuous and discrete starvation debt."""
+        b = belief[channel]
+        return {
+            "continuous_scan_debt": float(self.scan_debt(b, certificate=certificate, now_s=now_s)),
+            "skipped_plan_count": float(self.starvation_debt(channel)),
+            "scan_count": float(getattr(b, "scan_count", 0)),
+            "last_scan_time": float(getattr(b, "last_scan_time", 0.0)),
+        }
+
+    def record_plan(self, channels: Sequence[int], n_channels: Optional[int] = None) -> None:
+        """Advance skip debt after a plan is selected.
+
+        Resolved channels are naturally reset by callers supplying the current
+        eligible count; this method only tracks channels that were not selected.
+        """
+        chosen = {int(c) for c in channels}
+        limit = n_channels if n_channels is not None else max(self._skip_count.keys(), default=0)
+        for c in range(1, int(limit) + 1):
+            if c in chosen:
+                self._skip_count[c] = 0
+            else:
+                self._skip_count[c] = self._skip_count.get(c, 0) + 1
 
     # -- selection ----------------------------------------------------------
 
@@ -181,6 +301,12 @@ class ChannelScheduler:
             (c for c in scannable if c not in pinned and values[c] > self.eps),
             key=lambda c: -values[c],
         )
+
+        # Starvation guard: a repeatedly skipped eligible channel is promoted
+        # even when its local gain is small/zero. This affects planning only;
+        # resolved channels were removed from ``values`` above.
+        starved = [c for c in scannable if self.starvation_debt(c) >= self.starvation_limit]
+        pinned = list(dict.fromkeys(pinned + starved))
 
         # Sunk-move economics (§7): fill the batch with the highest-value channels up to
         # the mode cap; pinned channels always ride along. NOT ratio-gated — a value-per-

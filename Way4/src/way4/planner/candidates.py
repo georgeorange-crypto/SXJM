@@ -50,6 +50,7 @@ class CandidateGenerator:
         max_refine: int = 16,
         include_origin_explore: bool = True,
         min_coverage_gain: float = 1e-9,
+        hypothesis_layer=None,
     ) -> None:
         self.nbv = nbv or MinimaxNBV()
         self.scheduler = scheduler or ChannelScheduler()
@@ -60,6 +61,7 @@ class CandidateGenerator:
         self.max_refine = int(max_refine)
         self.include_origin_explore = bool(include_origin_explore)
         self.min_coverage_gain = float(min_coverage_gain)
+        self.hypotheses = hypothesis_layer
 
     # -- public -------------------------------------------------------------
 
@@ -73,6 +75,7 @@ class CandidateGenerator:
         cands: List[MacroCandidate] = []
         cands.extend(self._clear_candidates(belief, state))
         cands.extend(self._refine_candidates(belief, certificate, state, scan_mode))
+        cands.extend(self._initialize_candidates(belief, certificate, state, scan_mode))
         cands.extend(self._explore_candidates(belief, certificate, state, scan_mode))
         if not cands and not belief.all_resolved():
             # §11 Safe fallback ("无候选 → 退回 Way3 式保证完成策略"): the active
@@ -83,6 +86,72 @@ class CandidateGenerator:
         if belief.all_resolved():
             cands.append(self._exit_candidate(state))
         return cands
+
+    def generate_spatial_candidates(self, belief, certificate, state,
+                                    scan_mode: SchedulerMode = SchedulerMode.EARLY):
+        """Return the frozen mathematical pool in the Way4-Final interface.
+
+        Unlike ``generate`` this method does not collapse a detected channel to
+        one NBV action: every spatial opportunity is retained and annotated with
+        a candidate x channel matrix.  The existing generator remains available
+        as the Legacy/REINFORCE baseline.
+        """
+        # Local import avoids planner <-> rl package initialisation cycles.
+        from ..rl.candidate_ppo import CandidateChannelFeatures, SpatialCandidate
+        raw = self.generate(belief, certificate, state, scan_mode)
+        # Preserve spatial diversity for RL: the legacy planner's single NBV is
+        # still included, but it is no longer the only viewpoint exposed for a
+        # detected channel.  These offsets are geometric stand-off alternatives;
+        # they are candidates, not decisions or certificates.
+        expanded = list(raw)
+        for base in list(raw):
+            if base.action_type != MacroActionType.REFINE:
+                continue
+            x, y = base.target
+            for dx, dy in ((80., 0.), (-80., 0.), (0., 80.), (0., -80.)):
+                alt = MacroCandidate(base.action_type, (x + dx, y + dy),
+                                     scan_channels=base.scan_channels)
+                alt.refinement_gain = base.refinement_gain * 0.9
+                alt.certificate_gain = base.certificate_gain
+                alt.exploration_gain = base.exploration_gain
+                alt.expected_time = self.cost.batch_scan_time_s(state, alt.target,
+                                                                  alt.scan_channels)
+                alt.meta.update(base.meta); alt.meta["spatial_variant"] = True
+                expanded.append(alt)
+        raw = expanded
+        out = []
+        ordered = sorted(raw, key=lambda c: float(c.expected_time))
+        ranks = {id(c): i for i, c in enumerate(ordered)}
+        for c in raw:
+            services = {int(ch): (c.action_type.value,) for ch in c.scan_channels}
+            if c.clear_channel is not None:
+                services[int(c.clear_channel)] = ("CLEAR",)
+            interactions = {}
+            for ch in range(1, belief.n_channels + 1):
+                b = belief[ch]
+                active = ch in services
+                interactions[ch] = CandidateChannelFeatures(
+                    worth_measuring=float(active),
+                    guaranteed_detect=float(active and b.status == ChannelStatus.DETECTED),
+                    information_gain=float(c.refinement_gain if active else 0.0),
+                    expected_mec_after=float(getattr(b, "mec_radius", 0.0)),
+                    clear_probability=float(c.action_type == MacroActionType.CLEAR and active),
+                    certificate_gain=float(c.certificate_gain if active else 0.0),
+                    already_measured=float(ch in getattr(certificate.certs.get(ch), "visited_anchor_idx", set())
+                                          if certificate is not None else False),
+                    visibility_gain=float(self.hypotheses.elimination_gain(ch, c.target)
+                                          if self.hypotheses is not None else 0.0),
+                    directional_entropy=float(self.hypotheses.channel(ch).alive_fraction()
+                                              if self.hypotheses is not None else 0.0),
+                )
+            out.append(SpatialCandidate(
+                point=(float(c.target[0]), float(c.target[1])), services=services,
+                interactions=interactions, math_score=float(c.score or c.expected_time),
+                travel_time=float(c.expected_time), service_time=float(c.expected_time),
+                route_delta=float(c.expected_time), route_rank=float(ranks[id(c)]),
+                next_task_distance=float(c.expected_time),
+            ))
+        return out
 
     # -- CLEAR --------------------------------------------------------------
 
@@ -108,7 +177,7 @@ class CandidateGenerator:
     ) -> List[MacroCandidate]:
         detected = [
             c for c in range(1, belief.n_channels + 1)
-            if belief[c].status == ChannelStatus.DETECTED
+            if belief[c].status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED)
         ]
         # Refine the largest (least-localised) regions first, but propose a candidate
         # for EVERY detected channel (≤16 by the cardinality bound, so max_refine=16
@@ -122,6 +191,10 @@ class CandidateGenerator:
             if res is None:
                 continue
             q = res.point
+            if belief[c].status == ChannelStatus.INITIALIZED:
+                init_q = self.nbv.initialization_point(belief[c], state.pos)
+                if init_q is not None:
+                    q = init_q
             plan = self.scheduler.select(
                 q, belief, certificate, state.channel, mode=scan_mode, must_include=[c]
             )
@@ -137,13 +210,69 @@ class CandidateGenerator:
             m.meta["refine_channel"] = c
             m.meta["worst_case_diameter"] = res.worst_case_diameter
             out.append(m)
+
+            # Keep a separate completion-oriented option in the pool.  The
+            # ordinary minimax point can trade a small diameter reduction for
+            # distance, while this option explicitly asks whether one bearing
+            # can make the MEC kill certificate attainable in one step.
+            cq = self.nbv.completion_point(belief[c], state.pos,
+                                           kill_radius=belief[c].clear_threshold)
+            if cq is not None and cq != q:
+                cm = MacroCandidate(MacroActionType.REFINE, cq,
+                                    scan_channels=plan_channels)
+                cm.refinement_gain = max(0.0, belief[c].diameter - 2.0 * belief[c].clear_threshold)
+                cm.certificate_gain = self._unknown_coverage_gain(
+                    belief, certificate, plan_channels, cq)
+                cm.exploration_gain = plan.value
+                cm.expected_time = self.cost.batch_scan_time_s(state, cq, plan_channels)
+                cm.meta.update({
+                    "refine_channel": c,
+                    "completion_candidate": True,
+                    "completion_target_radius": belief[c].clear_threshold,
+                    "completion_probability": 1.0,
+                })
+                out.append(cm)
         return out
 
     # -- EXPLORE / VERIFY ---------------------------------------------------
 
+    def _initialize_candidates(self, belief, certificate, state, scan_mode):
+        """Create explicit INITIALIZE options for cardinality-forced channels.
+
+        A forced-present channel has existence evidence but no bearing.  It must
+        therefore enter the same geometric initialization stage as a detected
+        channel, rather than being silently treated as broad exploration.
+        """
+        out = []
+        forced = [c for c in range(1, belief.n_channels + 1)
+                  if belief[c].status == ChannelStatus.PRESENT_UNOBSERVED]
+        if not forced:
+            return out
+        for q in self._explore_pool(certificate, state):
+            plan = self.scheduler.select(q, belief, certificate, state.channel,
+                                         mode=scan_mode, must_include=forced)
+            if plan.is_empty:
+                continue
+            channels = tuple(plan.channels)
+            gain = self._unknown_coverage_gain(belief, certificate, forced, q)
+            m = MacroCandidate(MacroActionType.INITIALIZE, q, scan_channels=channels)
+            m.exploration_gain = plan.value
+            m.refinement_gain = gain
+            m.expected_time = self.cost.batch_scan_time_s(state, q, channels)
+            m.meta["initialize_channels"] = tuple(forced)
+            m.meta["readiness_score"] = max(
+                belief[c].readiness_score(state.pos, certificate.coverage_debt(c))
+                for c in forced
+            )
+            out.append(m)
+            if len(out) >= self.max_explore:
+                break
+        return out
+
     def _explore_candidates(
         self, belief, certificate, state: RobotState, scan_mode: SchedulerMode
     ) -> List[MacroCandidate]:
+        # PRESENT_UNOBSERVED has its own INITIALIZE option family above.
         unknown = belief.unknown_channels()
         if not unknown:
             return []
@@ -277,7 +406,9 @@ class CandidateGenerator:
     def _unknown_coverage_gain(self, belief, certificate, channels, q: Point) -> float:
         if certificate is None:
             return 0.0
-        unknown = [c for c in channels if belief[c].status == ChannelStatus.UNKNOWN]
+        unknown = [c for c in channels if belief[c].status in (
+            ChannelStatus.UNKNOWN, ChannelStatus.PRESENT_UNOBSERVED
+        )]
         if not unknown:
             return 0.0
         return certificate.batch_coverage_gain(unknown, q)

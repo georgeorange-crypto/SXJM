@@ -38,9 +38,12 @@ from typing import List, Optional, Sequence, Tuple
 
 from .belief import BeliefState, ChannelStatus
 from .certificate import CertificateManager
-from .channels import ChannelScheduler, SchedulerMode
-from .core import AnalyticalCostModel, MacroActionType, MacroCandidate, RobotState
+from .channels import AdaptiveScanSession, ChannelScheduler, SchedulerMode
+from .core import (AnalyticalCostModel, EventBus, EventType, MacroActionType,
+                   MacroCandidate, OptionTransition, RobotState, Way4Event)
 from .executor import HomingController, MacroExecutor
+from .rl.final_planner import CandidatePPOPlanner
+from .belief.hypothesis import HypothesisLayer
 from .metrics import (
     ROLE_CLEAR,
     ROLE_COVERAGE,
@@ -113,6 +116,8 @@ class Way4Pipeline:
         batch_stop: bool = False,
         initial_state: Optional[RobotState] = None,
         stall_limit: int = 16,
+        adaptive_scan: bool = False,
+        event_bus: Optional[EventBus] = None,
     ) -> None:
         self.env = env
         self.n_channels = int(n_channels)
@@ -120,8 +125,11 @@ class Way4Pipeline:
         self.time_budget_s = float(time_budget_s)
         self.max_steps = int(max_steps)
         self.stall_limit = int(stall_limit)
+        self.adaptive_scan = bool(adaptive_scan)
+        self.event_bus = event_bus
 
         self.belief = BeliefState(n_channels=n_channels)
+        self.hypotheses = HypothesisLayer() if problem == 4 else None
         self.certificate = certificate or CertificateManager(
             n_channels=n_channels, problem=problem
         )
@@ -132,18 +140,21 @@ class Way4Pipeline:
         # SpatialStops) — a non-destructive superset, so every legacy candidate still
         # flows through and full-clear cannot regress (禁止10). An explicit ``generator=``
         # overrides the mode; any other value is rejected.
-        if planner_mode not in ("legacy", "spatial"):
+        if planner_mode not in ("legacy", "spatial", "route_math", "final_ppo"):
             raise ValueError(
-                f"planner_mode must be 'legacy' or 'spatial', got {planner_mode!r}"
+                f"planner_mode must be one of legacy/spatial/route_math/final_ppo, got {planner_mode!r}"
             )
         self.planner_mode = planner_mode
         if generator is not None:
             self.generator = generator
-        elif planner_mode == "spatial":
-            self.generator = SpatialStopGenerator(CandidateGenerator(cost_model=self.cost))
+        elif planner_mode in ("spatial", "route_math", "final_ppo"):
+            self.generator = SpatialStopGenerator(CandidateGenerator(cost_model=self.cost, hypothesis_layer=self.hypotheses))
         else:  # "legacy"
-            self.generator = CandidateGenerator(cost_model=self.cost)
+            self.generator = CandidateGenerator(cost_model=self.cost, hypothesis_layer=self.hypotheses)
         self.planner = planner or RecedingHorizonPlanner()
+        self.channel_scheduler = getattr(self.generator, "scheduler", ChannelScheduler())
+        if planner_mode == "final_ppo" and planner is None:
+            self.planner = CandidatePPOPlanner(self.planner)
         self.executor = MacroExecutor(
             env,
             belief=self.belief,
@@ -171,6 +182,14 @@ class Way4Pipeline:
         # no-progress guard state
         self._last_progress_key: Optional[Tuple] = None
         self._stall = 0
+        self.events: List[Way4Event] = []
+        self.transitions: List[OptionTransition] = []
+
+    def _emit_event(self, event: Way4Event) -> None:
+        """Record locally and notify optional read-only external observers."""
+        self.events.append(event)
+        if self.event_bus is not None:
+            self.event_bus.publish(event)
 
     # -- main loop ----------------------------------------------------------
 
@@ -184,6 +203,7 @@ class Way4Pipeline:
                 # (§6.5; the only place absent is marked — 禁止6). force=True so the
                 # three sources are fully evaluated each tick.
                 self.certificate.apply_certifications(self.belief, force=True)
+                self.certificate.apply_cardinality_presence(self.belief)
 
                 if self.belief.all_resolved():
                     # legitimate completion: everything CLEARED ∨ ABSENT_CERTIFIED.
@@ -193,8 +213,19 @@ class Way4Pipeline:
                 # Plan: rank this belief's macros under the receding-horizon Ĵ.
                 macro = self._choose_macro()
                 if macro is None:
-                    error = "no_candidate"      # M9 fallback replaces this abort
-                    break
+                    # A learned planner may legally choose a dead-end.  The
+                    # completion contract requires handing control permanently
+                    # back to the deterministic base before reporting failure.
+                    if hasattr(self.planner, "watchdog") and hasattr(self.planner, "base"):
+                        self.planner.watchdog.fallback = True
+                        macro = self.planner.base.plan(
+                            self.belief, self.certificate, self.state,
+                            self.generator.generate(self.belief, self.certificate,
+                                                    self.state, scan_mode=self._scan_mode()),
+                        ).best
+                    if macro is None:
+                        error = "no_candidate"
+                        break
 
                 # Execute one macro; fold observations back into belief+certificate.
                 # Snapshot belief status BEFORE execution so route roles reflect the
@@ -202,10 +233,85 @@ class Way4Pipeline:
                 status_before = {
                     c: self.belief[c].status for c in range(1, self.n_channels + 1)
                 }
-                res = self.executor.execute(macro, self.state, self.time_budget_s)
+                start_belief = tuple(sorted((c, b.value) for c, b in status_before.items()))
+                start_time = self.state.virtual_time_s
+                if self.time_budget_s != float("inf"):
+                    remaining = self.time_budget_s - start_time
+                    if remaining <= max(1.0, float(macro.expected_time)) * 1.10:
+                        self._emit_event(Way4Event(
+                            EventType.TIME_BUDGET_WARNING, start_time,
+                            payload={"remaining_s": remaining,
+                                     "expected_macro_s": float(macro.expected_time)},
+                        ))
+                if self.adaptive_scan and macro.is_scan and macro.scan_channels:
+                    session = AdaptiveScanSession(
+                        ChannelScheduler(), macro.target, self.belief, self.certificate,
+                        self.state.channel, mode=self._scan_mode(), min_value=0.0,
+                    )
+                    res = self.executor.execute_adaptive(
+                        session, self.state, self.time_budget_s,
+                        max_scans=max(1, self.n_channels),
+                    )
+                else:
+                    res = self.executor.execute(macro, self.state, self.time_budget_s)
+                if macro.scan_channels:
+                    self.channel_scheduler.record_plan(
+                        macro.scan_channels, n_channels=self.n_channels
+                    )
+                if self.hypotheses is not None:
+                    for item in res.primitives:
+                        if item.primitive.kind.name == "MEASURE" and item.observation is not None:
+                            self.hypotheses.record_observation(int(item.primitive.channel),
+                                                               tuple(item.primitive.target), item.observation)
                 self._account(macro, res, status_before)
                 self.state = res.state
                 self._steps += 1
+                end_belief = tuple(sorted((c, self.belief[c].status.value)
+                                          for c in range(1, self.n_channels + 1)))
+                self.transitions.append(OptionTransition(
+                    start_belief=start_belief,
+                    option_type=macro.action_type.value,
+                    target=(float(macro.target[0]), float(macro.target[1])),
+                    channel_batch=tuple(int(c) for c in macro.scan_channels),
+                    elapsed_time_s=max(0.0, self.state.virtual_time_s - start_time),
+                    primitive_count=len(res.primitives),
+                    resulting_belief=end_belief,
+                    terminal=bool(res.finished or res.stopped_early),
+                    full_clear=bool(all(self.belief[c].is_resolved
+                                        for c in range(1, self.n_channels + 1))),
+                ))
+                self._emit_event(Way4Event(
+                    EventType.BATCH_COMPLETED, self.state.virtual_time_s,
+                    payload={"option": macro.action_type.value,
+                             "primitive_count": len(res.primitives)},
+                ))
+                for c, before_status in status_before.items():
+                    after_status = self.belief[c].status
+                    if before_status not in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED,
+                                             ChannelStatus.LOCALIZED, ChannelStatus.CLEARED,
+                                             ChannelStatus.PRESENT_UNOBSERVED) and after_status in (
+                                             ChannelStatus.DETECTED, ChannelStatus.INITIALIZED,
+                                             ChannelStatus.LOCALIZED, ChannelStatus.CLEARED):
+                        self._emit_event(Way4Event(
+                            EventType.POSITIVE_DISCOVERY, self.state.virtual_time_s, c
+                        ))
+                    if after_status == ChannelStatus.INITIALIZED and before_status != after_status:
+                        self._emit_event(Way4Event(EventType.INITIALIZED, self.state.virtual_time_s, c))
+                    if after_status == ChannelStatus.LOCALIZED and before_status != after_status:
+                        self._emit_event(Way4Event(EventType.LOCALIZED, self.state.virtual_time_s, c))
+                    if after_status == ChannelStatus.CLEARED and before_status != after_status:
+                        self._emit_event(Way4Event(EventType.SOURCE_CLEARED, self.state.virtual_time_s, c))
+                    if after_status == ChannelStatus.ABSENT_CERTIFIED and before_status != after_status:
+                        self._emit_event(Way4Event(EventType.CHANNEL_CERTIFIED_EMPTY, self.state.virtual_time_s, c))
+                if self.certificate.cardinality_state().q_min == self.certificate.cardinality_state().q_max:
+                    self._emit_event(Way4Event(
+                        EventType.CARDINALITY_CLOSURE, self.state.virtual_time_s,
+                        payload={"q_min": self.certificate.cardinality_state().q_min,
+                                 "q_max": self.certificate.cardinality_state().q_max},
+                    ))
+                if any(self.certificate.heuristic_coverage_ratio(c) >= 0.995
+                       for c in range(1, self.n_channels + 1)):
+                    self._emit_event(Way4Event(EventType.COVERAGE_THRESHOLD, self.state.virtual_time_s))
 
                 if res.finished:
                     # env signalled the episode is over: a deadline unless we chose
@@ -227,6 +333,8 @@ class Way4Pipeline:
                 # of the known stall (a zero-gain no-op winning on cost) is removed in
                 # the generator; this only bounds any residual degenerate loop.
                 key = self._progress_key()
+                if hasattr(self.planner, "record_progress"):
+                    self.planner.record_progress(key)
                 if key == self._last_progress_key:
                     self._stall += 1
                     if self._stall >= self.stall_limit:
@@ -273,7 +381,7 @@ class Way4Pipeline:
             if b.status == ChannelStatus.UNKNOWN:
                 cov += self.certificate.heuristic_coverage_ratio(c)
                 anchors += self.certificate.backbone_anchor_progress(c)
-            elif b.status == ChannelStatus.DETECTED and b.mec_radius != float("inf"):
+            elif b.status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED) and b.mec_radius != float("inf"):
                 mec += b.mec_radius
         return (resolved, self.certificate.present_count(), round(cov, 6), round(mec, 2), anchors)
 
@@ -348,7 +456,7 @@ class Way4Pipeline:
         detected = [
             c
             for c in range(1, self.n_channels + 1)
-            if self.belief[c].status == ChannelStatus.DETECTED
+            if self.belief[c].status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED)
         ]
         if not detected:
             return False
@@ -403,7 +511,7 @@ class Way4Pipeline:
         st = status_before.get(channel) if status_before is not None else None
         if st is None:
             st = self.belief[channel].status
-        if st in (ChannelStatus.DETECTED, ChannelStatus.LOCALIZED):
+        if st in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED, ChannelStatus.LOCALIZED):
             return ROLE_LOCALIZE
         return ROLE_COVERAGE
 

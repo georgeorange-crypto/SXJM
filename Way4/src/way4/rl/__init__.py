@@ -26,7 +26,7 @@ from .features import (
     feature_matrix,
 )
 from .residual_planner import RLResidualPlanner
-from .sampling_planner import Decision, SamplingResidualPlanner
+from .sampling_planner import Decision, SamplingResidualPlanner, expert_dataset
 from .scorer import ResidualScorer
 from .train import (
     EpisodeRecord,
@@ -34,6 +34,8 @@ from .train import (
     TrainConfig,
     episode_return,
 )
+from .candidate_ppo import CandidateActorCritic, CandidateChannelFeatures, SpatialCandidate, CandidatePPOTrainer, PPOConfig, compute_gae
+from .candidate_rollout import CandidateTransition, finish_episode, collate
 
 __all__ = [
     "CANDIDATE_FEATURE_DIM",
@@ -44,9 +46,19 @@ __all__ = [
     "ResidualScorer",
     "RLResidualPlanner",
     "SamplingResidualPlanner",
+    "expert_dataset",
     "Decision",
     "ResidualTrainer",
     "TrainConfig",
     "EpisodeRecord",
     "episode_return",
+    "CandidateActorCritic",
+    "CandidateChannelFeatures",
+    "SpatialCandidate",
+    "CandidatePPOTrainer",
+    "PPOConfig",
+    "compute_gae",
+    "CandidateTransition",
+    "finish_episode",
+    "collate",
 ]
