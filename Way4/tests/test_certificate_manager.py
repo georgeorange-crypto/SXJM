@@ -50,6 +50,17 @@ def test_directional_no_signal_never_uses_omni_absence_certificate():
     assert mgr.is_absent_certified(3, force=True) is False
 
 
+def test_p4_manager_records_local_convex_hull_geometry_without_omni_certifying():
+    mgr = CertificateManager(problem=4, fallback_anchors=[])
+    points = [(1000.0, 0.0), (-500.0, 866.0254038), (-500.0, -866.0254038)]
+    for p in points:
+        mgr.record_observation(3, p, Observation.no_signal())
+    cert = mgr.certs[3]
+    assert cert.directional_local_certificate is True
+    assert mgr.directional_counterexample(3) is None
+    assert mgr.is_absent_certified(3, force=True) is False
+
+
 def test_positive_stops_certificate_and_ignores_later_no_signal():
     mgr = CertificateManager()
     mgr.record_observation(7, (100.0, 0.0), Observation.bearing(42.0))

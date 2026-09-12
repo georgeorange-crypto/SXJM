@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Set, Tuple
 from .coverage_gain import CoverageGainMap
 from .fallback import directional_fallback_anchors, omni_fallback_anchors
 from .hard_disc_cover import HardDiscCoverVerifier
+from .directional_certificate import DirectionalCounterexample, check_point
 from ..belief import ChannelStatus
 from ..core import Observation
 
@@ -70,6 +71,8 @@ class OmniChannelCertificate:
     present: bool = False                             # a positive obs stopped certificate work
     visited_anchor_idx: Set[int] = field(default_factory=set)
     _hard_checked_count: int = -1                     # scan count at last nominal verify
+    directional_local_certificate: bool = False       # local convex-hull check only
+    directional_counterexample: Optional[DirectionalCounterexample] = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,8 @@ class CertificateManager:
         speed: float = 5.0,
         scan_time_s: float = 5.0,
         fallback_anchors: Optional[List[Point]] = None,
+        enable_no_signal: bool = True,
+        enable_cardinality: bool = True,
     ) -> None:
         self.n_channels = n_channels
         self.problem = int(problem)
@@ -115,6 +120,8 @@ class CertificateManager:
         self.rescue_only_in_verification = rescue_only_in_verification
         self.speed = speed
         self.scan_time_s = scan_time_s
+        self.enable_no_signal = bool(enable_no_signal)
+        self.enable_cardinality = bool(enable_cardinality)
 
         self.map = CoverageGainMap(arena_radius, coverage_spacing, detection_radius)
         self._verifier = HardDiscCoverVerifier(
@@ -146,6 +153,15 @@ class CertificateManager:
         self._present: Set[int] = set()
         self._cleared: Set[int] = set()
 
+    # -- planner-facing residual responsibility (never a certificate) ----------
+
+    def unverified_region(self, channel: int) -> List[Point]:
+        return list(self.map.remaining_holes(int(channel)))
+
+    def remaining_backbone_anchors(self, channel: int) -> List[Point]:
+        cert = self.certs[int(channel)]
+        return [p for i, p in enumerate(self.anchors) if i not in cert.visited_anchor_idx]
+
     # -- observation intake (§6.4) -----------------------------------------
 
     def record_observation(self, channel: int, point: Point, obs: Observation) -> None:
@@ -163,12 +179,26 @@ class CertificateManager:
             return
         if not obs.is_no_signal:
             return
+        if not self.enable_no_signal:
+            return
         if cert.present or channel in self._cleared:
             return
 
         p = (float(point[0]), float(point[1]))
         cert.negative_scan_points.append(p)
         cert.active_scan_count += 1
+        if self.problem == 4:
+            # P4 must not turn a directional NO_SIGNAL into an omni exclusion.
+            # This local check is nevertheless useful: once the current point is
+            # surrounded by nearby scan points, it records the new P4 geometry
+            # without certifying the whole arena.
+            cert.directional_counterexample = check_point(
+                p, cert.negative_scan_points, radius=self._verifier.radius
+            )
+            cert.directional_local_certificate = (
+                cert.directional_counterexample is None
+                and len(cert.negative_scan_points) >= 3
+            )
         self.map.add_no_signal(channel, p)
         cert.heuristic_coverage_ratio = self.map.coverage_ratio(channel)
         cert.coverage_debt = max(0.0, 1.0 - cert.heuristic_coverage_ratio)
@@ -306,7 +336,7 @@ class CertificateManager:
             source = CertificateSource.ARBITRARY_DISC_COVER
         elif self.legacy_backbone_complete(channel):
             source = CertificateSource.LEGACY_BACKBONE
-        elif self.absent_by_cardinality(channel):
+        elif self.enable_cardinality and self.absent_by_cardinality(channel):
             source = CertificateSource.CARDINALITY
         else:
             return False
@@ -333,6 +363,8 @@ class CertificateManager:
         remaining channel contains a source.  A weaker ``q_min > 0`` does not
         identify which channel and therefore performs no per-channel mutation.
         """
+        if not self.enable_cardinality:
+            return []
         state = self.cardinality_state()
         if state.unknown == 0 or state.q_min != state.unknown:
             return []
@@ -365,7 +397,15 @@ class CertificateManager:
             "uncovered_area": float(cert.uncovered_area),
             "active_scan_count": float(cert.active_scan_count),
             "backbone_anchor_count": float(cert.fallback_anchor_count),
+            "directional_local_certificate": float(cert.directional_local_certificate),
         }
+
+    def directional_counterexample(self, channel: int) -> Optional[DirectionalCounterexample]:
+        """Return the latest actionable P4 local geometry witness, if any.
+
+        This is a diagnostic/planner signal, not an arena-wide absence proof.
+        """
+        return self.certs[channel].directional_counterexample
 
     def coverage_gain(self, channel: int, q: Point) -> float:
         return self.map.coverage_gain(channel, q)
