@@ -33,6 +33,16 @@ from .manager import (
     CertificateSource,
     CardinalityState,
 )
+from .directional_certificate import (
+    DirectionalCertificateResult,
+    DirectionalCounterexample,
+    check_point,
+    disk_grid_samples,
+    nearby_convex_hull,
+    point_in_triangle,
+    safe_triangle,
+    verify_samples,
+)
 
 __all__ = [
     "CoverageGainMap",
@@ -49,4 +59,12 @@ __all__ = [
     "OmniChannelCertificate",
     "CertificateSource",
     "CardinalityState",
+    "DirectionalCertificateResult",
+    "DirectionalCounterexample",
+    "check_point",
+    "disk_grid_samples",
+    "nearby_convex_hull",
+    "point_in_triangle",
+    "safe_triangle",
+    "verify_samples",
 ]
