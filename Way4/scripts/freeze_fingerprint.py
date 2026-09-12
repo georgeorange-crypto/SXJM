@@ -21,7 +21,7 @@ def main():
                      "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
                      "bytes": p.stat().st_size})
     tree = hashlib.sha256("".join(r["path"] + r["sha256"] for r in rows).encode()).hexdigest()
-    payload={"kind":"way4-source-tree-fingerprint-v1","git_head":"f0084a4",
+    payload={"kind":"way4-source-tree-fingerprint-v1","git_head":"399d6ad",
              "working_tree_has_uncommitted_changes":True,"file_count":len(rows),
              "tree_sha256":tree,"files":rows}
     OUT.parent.mkdir(parents=True,exist_ok=True); OUT.write_text(json.dumps(payload,indent=2)+"\n",encoding="utf-8")

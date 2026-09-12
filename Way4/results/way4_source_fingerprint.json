@@ -1,9 +1,9 @@
 {
   "kind": "way4-source-tree-fingerprint-v1",
-  "git_head": "f0084a4",
+  "git_head": "399d6ad",
   "working_tree_has_uncommitted_changes": true,
   "file_count": 106,
-  "tree_sha256": "b50acdec9503708bd899d8023be2d7d487159876780a42bc2b13eccdf36acde6",
+  "tree_sha256": "e8a438e0101d92b4c484d55585b1117eb0d69adcc2df2ad5b4435f8aaacd14b9",
   "files": [
     {
       "path": "DESIGN.md",
@@ -12,8 +12,8 @@
     },
     {
       "path": "FREEZE_MANIFEST.md",
-      "sha256": "c204bdfcaee2af9823ca203b9c7275090ee5f7bd19e200797f60d4d7b00cd6ba",
-      "bytes": 1513
+      "sha256": "485b01881b0ef0653e5912cff68733b49a012813772dde0095997b9aa8bb45fc",
+      "bytes": 1453
     },
     {
       "path": "src/way4/__init__.py",
