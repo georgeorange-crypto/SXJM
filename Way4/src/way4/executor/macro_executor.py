@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import List, Optional, Protocol, Tuple
+from math import dist, isfinite
 
 from ..core.actions import MacroActionType, MacroCandidate, Primitive, PrimitiveKind
 from ..core.cost import AnalyticalCostModel, RobotState, _us
@@ -75,6 +76,7 @@ class MacroExecutor:
         cost_model: Optional[AnalyticalCostModel] = None,
         opportunistic_clear: bool = False,
         batch_stop: bool = False,
+        strict_clear_safety: bool = False,
     ) -> None:
         self.env = env
         self.belief = belief
@@ -85,6 +87,9 @@ class MacroExecutor:
         # mid-batch (see execute / _scan_redundant). Default off => byte-identical
         # legacy execution, so the shipped full-clear is unchanged (禁止10).
         self.batch_stop = bool(batch_stop)
+        self.strict_clear_safety = bool(strict_clear_safety)
+        self.interactive_trace: List[PrimitiveResult] = []
+        self.clear_audit: list = []
 
     # -- public API --------------------------------------------------------
 
@@ -199,6 +204,7 @@ class MacroExecutor:
         if not self._within_budget(state, prim, time_budget_s):
             return state, None, True
         state, pr, finished = self._do_measure(state, prim)
+        self.interactive_trace.append(pr)
         return state, pr.observation, finished
 
     def step_clear(
@@ -210,6 +216,7 @@ class MacroExecutor:
         if not self._within_budget(state, prim, time_budget_s, hit=True):
             return state, False, True
         state, pr, finished = self._do_clear(state, prim)
+        self.interactive_trace.append(pr)
         return state, pr.cleared, finished
 
     # -- primitives --------------------------------------------------------
@@ -225,12 +232,46 @@ class MacroExecutor:
         return nxt, PrimitiveResult(prim, obs, False, vts), False
 
     def _do_clear(self, state: RobotState, prim: Primitive):
+        proof = self._clear_proof(prim.channel, prim.target)
+        if self.strict_clear_safety and proof is None:
+            self.clear_audit.append({'channel': int(prim.channel),
+                                    'target': list(prim.target), 'proof': None,
+                                    'legal': False, 'hit': False,
+                                    'rejected': True,
+                                    'time_before_s': state.virtual_time_s,
+                                    'time_after_s': state.virtual_time_s})
+            return state, PrimitiveResult(prim, None, False, state.virtual_time_s), False
         hit, vts = self.env.clear(prim.target[0], prim.target[1], prim.channel)
+        self.clear_audit.append({'channel': int(prim.channel),
+                                'target': list(prim.target), 'proof': proof,
+                                'legal': proof is not None, 'hit': bool(hit),
+                                'time_before_s': state.virtual_time_s,
+                                'time_after_s': vts, 'rejected': False})
         # pose moves; measuring channel is UNCHANGED (§1.1 crux).
         nxt = RobotState(float(prim.target[0]), float(prim.target[1]), int(state.channel), _us(vts))
         if hit:
-            self._fold_clear(prim.channel)
+            self._fold_clear(prim.channel, vts)
         return nxt, PrimitiveResult(prim, None, hit, vts), False
+
+    def _clear_proof(self, channel, target):
+        """Read-only pre-action certificate; outcome cannot create a proof.
+
+        Valid for any target, including clustered stops: the entire hard outer
+        polygon must fit in the 20 m clear disk. Near observations prove a 5 m
+        disk independently. Soft hypotheses and a later hit are not evidence.
+        """
+        if self.belief is None or not all(isfinite(v) for v in target):
+            return None
+        b = self.belief[channel]
+        if b.is_resolved:
+            return None
+        if any(dist(target, p) + 5.0 <= 20.0 - 1e-7 for p in b.near_points):
+            return 'near_disk'
+        polygon = b.F_c
+        if polygon and all(all(isfinite(v) for v in p) and
+                           dist(target, p) <= 20.0 - 1e-7 for p in polygon):
+            return 'hard_outer_polygon'
+        return None
 
     # -- belief / certificate side effects ---------------------------------
 
@@ -246,9 +287,9 @@ class MacroExecutor:
         if self.certificate is not None:
             self.certificate.record_observation(channel, point, obs)
 
-    def _fold_clear(self, channel: int) -> None:
+    def _fold_clear(self, channel: int, time: float = 0.0) -> None:
         if self.belief is not None:
-            self.belief[channel].mark_cleared()
+            self.belief[channel].mark_cleared(time=float(time))
         if self.certificate is not None:
             self.certificate.mark_cleared(channel)
 

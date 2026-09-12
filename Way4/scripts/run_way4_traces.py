@@ -12,6 +12,7 @@ from offline_sim.engine import Engine
 from way4.core.observation import Observation
 from way4.executor import Way3EngineAdapter
 from way4.pipeline import Way4Pipeline
+from way4.evaluation_metrics import episode_row
 
 
 class OfflineAdapter(Way3EngineAdapter):
@@ -59,7 +60,7 @@ def run(seed: int, max_steps: int = 120):
 
     pipe.executor.execute = traced
     result = pipe.run()
-    return {"seed": seed, "result": result.__dict__, "trace": rows,
+    return {"seed": seed, "result": {**result.__dict__, "benchmark": episode_row(result)}, "trace": rows,
             "truth": [{"channel": j.channel, "x": j.x, "y": j.y, "r_eff": j.r_eff, "kind": j.kind} for j in case.jammers]}
 
 

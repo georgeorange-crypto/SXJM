@@ -1,0 +1,20 @@
+{
+  "math": [
+    {
+      "seed": 2050,
+      "full_clear": true,
+      "time_s": 14476.538855,
+      "move_m": 43372.76104780242,
+      "measure": 578,
+      "switch": 511,
+      "clear": 9,
+      "error": null
+    }
+  ],
+  "ppo": [],
+  "paired": null,
+  "complete": false,
+  "seeds": [
+    2050
+  ]
+}

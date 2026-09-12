@@ -123,12 +123,15 @@ def _load_way3_directional(src_radius: float) -> Optional[List[Point]]:
         return None
 
 
-def _builtin_directional(src_radius: float, h: float = 600.0) -> List[Point]:
+def _builtin_directional(src_radius: float, h: float = 900.0) -> List[Point]:
     """Triangular lattice (edge ``h`` < 1000) clipped just beyond the source range.
     Mirrors Way3's construction so any in-range point sees >=3 lattice vertices
     within 1000 m, closing the 180° angular gap (verified by Way3, deferred here)."""
     pts: List[Point] = []
-    rmax = src_radius + 0.55 * h
+    # Keep a full one-cell exterior shell.  The smaller 0.55*h envelope can
+    # leave rim sources with all nearby detectors on the arena-facing side,
+    # which is a valid directional blind-arc counterexample.
+    rmax = src_radius + h
     dy = h * math.sqrt(3.0) / 2.0
     jmax = int(math.ceil(rmax / dy)) + 1
     for j in range(-jmax, jmax + 1):
@@ -139,6 +142,21 @@ def _builtin_directional(src_radius: float, h: float = 600.0) -> List[Point]:
             x = i * h + x_off
             if x * x + y * y <= rmax * rmax + 1e-6:
                 pts.append((x, y))
+    # Offline verified fixed-template reduction for h=900: these six far outer
+    # vertices are redundant for the 1800 m domain's directional 3-cover.  Keep
+    # the reduction deterministic and geometry-only; never remove anchors based
+    # on runtime belief or observed source locations.  Dense 50 m and 25 m
+    # regressions cover the resulting 31-point template (4053 and 16241 domain
+    # samples respectively).
+    if abs(h - 900.0) <= 1e-9:
+        dy900 = h * math.sqrt(3.0) / 2.0
+        pts = [
+            p for p in pts
+            if not (
+                (abs(abs(p[0]) - 1.5 * h) <= 1e-9 and abs(p[1]) > 2.0 * dy900)
+                or (abs(abs(p[0]) - 3.0 * h) <= 1e-9 and abs(p[1]) <= 1e-9)
+            )
+        ]
     return pts
 
 
@@ -152,3 +170,61 @@ def directional_fallback_anchors(
         pts = _load_way3_directional(src_radius) if prefer_way3 else None
         _DIR_CACHE = pts if pts else _builtin_directional(src_radius)
     return list(_DIR_CACHE)
+
+
+def ray_sweep_points(
+    origin: Point,
+    bearing_deg: float,
+    length_m: float,
+    *,
+    lateral_half_width_m: float = 13.0,
+    step_m: float = 15.0,
+) -> List[Point]:
+    """Generate a deterministic zig-zag rescue path around a bearing ray.
+
+    This is a *candidate path*, not a localization or absence certificate.  It
+    is intended for the P4 case where a valid bearing has already been
+    observed but subsequent views may fall in the directional blind half-plane.
+    The lateral spacing is deliberately explicit: callers must choose it so
+    the resulting path's clearance discs cover the desired wedge.  Points are
+    emitted in alternating order, with the ray endpoint included once.
+    """
+    if length_m < 0 or lateral_half_width_m < 0 or step_m <= 0:
+        raise ValueError("length_m and lateral_half_width_m must be non-negative; step_m > 0")
+    ux = math.cos(math.radians(bearing_deg))
+    uy = math.sin(math.radians(bearing_deg))
+    nx, ny = -uy, ux
+    count = max(1, int(math.ceil(length_m / step_m)))
+    points: List[Point] = []
+    for i in range(count + 1):
+        along = min(length_m, i * step_m)
+        side = lateral_half_width_m if i % 2 == 0 else -lateral_half_width_m
+        points.append((
+            origin[0] + along * ux + side * nx,
+            origin[1] + along * uy + side * ny,
+        ))
+    endpoint = (origin[0] + length_m * ux, origin[1] + length_m * uy)
+    if points[-1] != endpoint:
+        points.append(endpoint)
+    return points
+
+
+def triangular_clear_sweep_points(
+    center: Point, *, radius_m: float = 50.0, spacing_m: float = 33.0
+) -> List[Point]:
+    """Local triangular-lattice clear candidates; never a certificate."""
+    if radius_m < 0 or spacing_m <= 0:
+        raise ValueError("radius_m must be non-negative and spacing_m > 0")
+    dy = spacing_m * math.sqrt(3.0) / 2.0
+    n = int(math.ceil(radius_m / dy))
+    points: List[Point] = []
+    for j in range(-n, n + 1):
+        y = j * dy
+        x_offset = 0.5 * spacing_m if j % 2 else 0.0
+        i_max = int(math.ceil((radius_m + abs(x_offset)) / spacing_m))
+        for i in range(-i_max, i_max + 1):
+            x = i * spacing_m + x_offset
+            if x * x + y * y <= radius_m * radius_m + 1e-9:
+                points.append((center[0] + x, center[1] + y))
+    points.sort(key=lambda p: (math.dist(center, p), p[1], p[0]))
+    return points

@@ -16,7 +16,31 @@ from way4.certificate import (
     assert_backbone_covers,
     directional_fallback_anchors,
     omni_fallback_anchors,
+    ray_sweep_points,
+    triangular_clear_sweep_points,
 )
+
+
+def test_ray_sweep_points_is_bounded_and_alternates_sides():
+    pts = ray_sweep_points((10.0, -4.0), 0.0, 40.0, lateral_half_width_m=13.0, step_m=15.0)
+    assert pts[0] == (10.0, 9.0)
+    assert pts[1] == (25.0, -17.0)
+    assert pts[-1] == (50.0, -4.0)
+    assert all(10.0 <= x <= 50.0 for x, _ in pts)
+
+
+def test_ray_sweep_rejects_invalid_step():
+    import pytest
+    with pytest.raises(ValueError):
+        ray_sweep_points((0.0, 0.0), 90.0, 10.0, step_m=0.0)
+
+
+def test_triangular_clear_sweep_is_local_and_uses_safe_spacing():
+    center = (10.0, -4.0)
+    points = triangular_clear_sweep_points(center, radius_m=50.0, spacing_m=33.0)
+    assert points
+    assert max(math.dist(center, p) for p in points) <= 50.0 + 1e-9
+    assert 33.0 < 20.0 * math.sqrt(3.0)
 from way4.core import Observation
 
 ARENA = 1800.0
@@ -102,6 +126,25 @@ def test_directional_fallback_is_a_dense_omni_disc_cover():
     assert assert_backbone_covers(anchors) is True
     # cached: same identity-of-contents on a second call
     assert directional_fallback_anchors() == anchors
+
+
+def test_builtin_directional_shell_passes_rim_grid_samples():
+    """The exterior shell is required for rim sources facing outward."""
+    from way4.certificate.directional_certificate import disk_grid_samples, verify_samples
+    from way4.certificate.fallback import _builtin_directional
+    result = verify_samples(_builtin_directional(1800.0, 900.0),
+                            disk_grid_samples(1800.0, 50.0), radius=1000.0)
+    assert result.certified
+    assert result.checked_points == 4053
+
+
+def test_builtin_directional_reduced_template_passes_25m_grid():
+    from way4.certificate.directional_certificate import disk_grid_samples, verify_samples
+    from way4.certificate.fallback import _builtin_directional
+    result = verify_samples(_builtin_directional(1800.0, 900.0),
+                            disk_grid_samples(1800.0, 25.0), radius=1000.0)
+    assert result.certified
+    assert result.checked_points == 16241
 
 
 # --- no-false-positive property (random arena witness outside all discs) ------

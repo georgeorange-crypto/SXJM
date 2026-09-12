@@ -29,6 +29,7 @@ from .tsp import (
     nearest_neighbor_open,
     two_opt_open,
 )
+from ..toolbox import generalized_tsp
 
 Point = Tuple[float, float]
 
@@ -121,9 +122,13 @@ class LocalizationCostModel:
 class RouteEstimator:
     """Caches the exact tour over the clearable set; re-solves only on set change."""
 
-    def __init__(self, speed: float = 5.0, exact_max_n: int = 13) -> None:
+    def __init__(self, speed: float = 5.0, exact_max_n: int = 13,
+                 strategy: str = "tspn") -> None:
         self.speed = float(speed)
         self.exact_max_n = int(exact_max_n)
+        if strategy not in ("tspn", "gtsp", "nearest"):
+            raise ValueError("strategy must be 'tspn', 'gtsp' or 'nearest'")
+        self.strategy = strategy
         self._set_tour_cache: Dict[frozenset, Tuple[List[int], float]] = {}
         self.solves = 0   # cache-miss solve count (for the memoisation test)
 
@@ -147,6 +152,9 @@ class RouteEstimator:
 
     def _solve(self, start_cost, cost) -> Tuple[List[int], float, bool]:
         n = len(start_cost)
+        if self.strategy == "nearest":
+            order, length = nearest_neighbor_open(start_cost, cost)
+            return order, length, False
         if n <= self.exact_max_n:
             order, length = held_karp_open(start_cost, cost)
             return order, length, True
@@ -165,6 +173,21 @@ class RouteEstimator:
         start_cost, cost = self._point_matrices(start, pts)
         idx, length, exact = self._solve(start_cost, cost)
         return RoutePlan([pts[i] for i in idx], length, exact)
+
+    def optimal_neighborhood_order(self, start: Point,
+                                   neighborhoods: Sequence[Neighborhood]) -> RoutePlan:
+        """Open online-TSPN route over conservative feasible neighborhoods."""
+        neigh = list(neighborhoods)
+        if not neigh:
+            return RoutePlan([], 0.0, True)
+        if self.strategy == "gtsp":
+            route, length = self._gtsp_route(start, neigh)
+            return RoutePlan(route, length, True,
+                             sum(n.localization_cost for n in neigh))
+        start_cost, cost = self._neighborhood_matrices(start, neigh)
+        idx, length, exact = self._solve(start_cost, cost)
+        return RoutePlan([neigh[i].center for i in idx], length, exact,
+                         sum(n.localization_cost for n in neigh))
 
     def _set_tour(self, targets: Sequence[Point]) -> Tuple[List[int], float]:
         """Cached start-free minimum path over the target SET (order/length keyed by
@@ -239,10 +262,28 @@ class RouteEstimator:
         neigh = list(neighborhoods)
         if not neigh:
             return RoutePlan([], 0.0, True)
+        if self.strategy == "gtsp":
+            route, length = self._gtsp_route(start, neigh)
+            return RoutePlan(route, length, True,
+                             localization_cost=sum(nb.localization_cost for nb in neigh))
         start_cost, cost = self._neighborhood_matrices(start, neigh)
         idx, length, exact = self._solve(start_cost, cost)
         loc = sum(nb.localization_cost for nb in neigh)
         return RoutePlan([neigh[i].center for i in idx], length, exact, localization_cost=loc)
+
+    @staticmethod
+    def _gtsp_route(start: Point, neighborhoods: Sequence[Neighborhood]):
+        """Discretized TSPN: each neighborhood becomes one candidate cluster."""
+        from math import cos, pi, sin
+        candidates = []
+        for nb in neighborhoods:
+            r = max(0.0, float(nb.radius))
+            points = [tuple(nb.center)]
+            if r > 0.0:
+                points.extend((nb.center[0] + r * cos(2*pi*k/8),
+                               nb.center[1] + r * sin(2*pi*k/8)) for k in range(8))
+            candidates.append(points)
+        return generalized_tsp(candidates, start, _dist, max_exact=8)
 
     def guaranteed_clear_route(
         self,

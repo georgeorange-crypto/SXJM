@@ -33,21 +33,21 @@
     "adaptive_rerank": [
       {
         "seed": 2000,
-        "success": false,
+        "success": true,
         "full_clear": true,
-        "virtual_time_s": 7434.944379,
-        "error": "no_progress_stall",
-        "steps": 54
+        "virtual_time_s": 14739.309081,
+        "error": null,
+        "steps": 93
       }
     ],
     "adaptive_rerank_stop": [
       {
         "seed": 2000,
-        "success": false,
+        "success": true,
         "full_clear": true,
-        "virtual_time_s": 7434.944379,
-        "error": "no_progress_stall",
-        "steps": 54
+        "virtual_time_s": 14739.309081,
+        "error": null,
+        "steps": 93
       }
     ],
     "nbv_greedy": [

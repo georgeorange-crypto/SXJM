@@ -1,0 +1,19 @@
+{
+  "n_paired": 3,
+  "full_clear_regressions": [],
+  "full_clear_nonregression": true,
+  "mean_time_baseline_s": 2972.3652830000005,
+  "mean_time_variant_s": 2390.704733666667,
+  "mean_time_delta_s": -581.6605493333336,
+  "mean_distance_baseline_m": 11310.159756414789,
+  "mean_distance_variant_m": 8168.523672939056,
+  "mean_distance_delta_m": -3141.6360834757324,
+  "mean_resolved_baseline": 11.666666666666666,
+  "mean_resolved_variant": 8.333333333333334,
+  "mean_resolved_delta": -3.333333333333332,
+  "resolved_nonregression": false,
+  "promote_default": false,
+  "input": "results\\spatial_clustering_seed1000_1002_steps20.json",
+  "baseline": "none",
+  "variant": "dbscan"
+}

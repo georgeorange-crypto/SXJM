@@ -20,3 +20,25 @@ def test_waiting_promotes_after_starvation_limit():
     assert pool.consider_wait(1, 100, 10, (0, 0))
     assert pool.consider_wait(1, 100, 10, (0, 0))
     assert not pool.consider_wait(1, 100, 10, (0, 0))
+
+
+def test_route_assignment_binds_cheapest_viable_future_waypoint():
+    belief = BeliefState(n_channels=1)
+    belief[1].status = ChannelStatus.DETECTED
+    pool = RemainingTaskPool()
+    pool.sync(belief)
+    assigned = pool.assign_route_opportunities(
+        [(0.0, 0.0), (100.0, 0.0), (1000.0, 0.0)], {1: 100.0}
+    )
+    assert assigned[1] == (100.0, 0.0)
+    assert pool.waiting[1].assigned_waypoint == (100.0, 0.0)
+
+
+def test_route_assignment_respects_feasibility_gate():
+    belief = BeliefState(n_channels=1)
+    belief[1].status = ChannelStatus.DETECTED
+    pool = RemainingTaskPool()
+    pool.sync(belief)
+    assert pool.assign_route_opportunities(
+        [(0, 0), (10, 0)], {1: 100}, viable=lambda _c, _p: False
+    ) == {}

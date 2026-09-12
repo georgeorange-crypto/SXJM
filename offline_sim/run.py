@@ -28,6 +28,7 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=None, help="随机种子（复现同一案例）")
     ap.add_argument("--n-jammers", type=int, default=None, help="干扰源个数 10..16（默认随机）")
     ap.add_argument("--n-dir", type=int, default=None, help="定向源个数（仅 problem=4）")
+    ap.add_argument("--hard", action="store_true", help="P4 最难基准：全部干扰源均为定向源")
     ap.add_argument("--mode", default="practice", choices=("practice", "formal"),
                     help="practice 演练（退出揭示真值）/ formal 正式")
     ap.add_argument("--field", default="smooth",
@@ -44,6 +45,7 @@ def main(argv=None):
         case = generate_case(
             seed=args.seed, problem=args.problem,
             n_jammers=args.n_jammers, n_directional=args.n_dir, mode=args.mode,
+            hard=args.hard,
             field_kind=args.field,
         )
 

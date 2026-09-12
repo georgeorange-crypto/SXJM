@@ -1,0 +1,37 @@
+{
+  "benchmark": "synthetic_single_source",
+  "n_artifacts": 4,
+  "seeds": [
+    11,
+    23,
+    47,
+    71
+  ],
+  "trials_total": 400,
+  "modes": {
+    "expected": {
+      "valid_total": 400,
+      "miss_rate_mean_over_seeds": 0.0,
+      "miss_rate_max_over_seeds": 0.0,
+      "mean_realized_diameter_m_mean_over_seeds": 57.67757414489093,
+      "worst_realized_diameter_m_max_over_seeds": 141.7810694373088,
+      "mean_objective_score_mean_over_seeds": 211.42679653743326
+    },
+    "minimax": {
+      "valid_total": 400,
+      "miss_rate_mean_over_seeds": 0.0,
+      "miss_rate_max_over_seeds": 0.0,
+      "mean_realized_diameter_m_mean_over_seeds": 54.34453738535852,
+      "worst_realized_diameter_m_max_over_seeds": 154.27945127759057,
+      "mean_objective_score_mean_over_seeds": 195.25174631089615
+    },
+    "time": {
+      "valid_total": 400,
+      "miss_rate_mean_over_seeds": 0.345,
+      "miss_rate_max_over_seeds": 0.4,
+      "mean_realized_diameter_m_mean_over_seeds": 838.1595366886235,
+      "worst_realized_diameter_m_max_over_seeds": 1503.2185062109515,
+      "mean_objective_score_mean_over_seeds": 24.414904881253904
+    }
+  }
+}

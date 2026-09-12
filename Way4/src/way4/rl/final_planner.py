@@ -36,9 +36,16 @@ class CandidatePPOPlanner:
         self.watchdog = watchdog or ProgressWatchdog()
         self.decisions = []
         self.last_error = None
+        self.fallback_reason = None
     def reset_episode(self): self.watchdog.reset()
     def record_progress(self, key, candidate_cost=None, conservative_cost=None):
-        return self.watchdog.observe(key, candidate_cost, conservative_cost)
+        fallback = self.watchdog.observe(key, candidate_cost, conservative_cost)
+        if fallback and self.fallback_reason is None:
+            self.fallback_reason = "watchdog_stall_or_detour"
+        return fallback
+    def mark_fallback(self, reason):
+        self.watchdog.fallback = True
+        self.fallback_reason = str(reason)
     def plan(self, belief, certificate, state, candidates):
         result = self.base.plan(belief, certificate, state, candidates)
         if self.watchdog.fallback or self.policy is None or not result.evaluations:
@@ -55,6 +62,7 @@ class CandidatePPOPlanner:
         except Exception as exc:
             self.last_error = f'{type(exc).__name__}: {exc}'
             self.watchdog.fallback = True
+            self.fallback_reason = "policy_exception"
             return result
 
 class TorchCandidatePolicy:
@@ -64,22 +72,28 @@ class TorchCandidatePolicy:
     return ``[n_candidates, feature_dim]``.  The returned value is always an
     index into that evaluation list.
     """
-    def __init__(self, model, feature_builder, *, temperature=1.0, stochastic=False):
+    def __init__(self, model, feature_builder, *, temperature=1.0, stochastic=False, device=None):
         self.model, self.feature_builder = model, feature_builder
+        self.device = device or next(model.parameters()).device
         self.temperature, self.stochastic = float(temperature), bool(stochastic)
         self.records = []
     def __call__(self, evaluations, belief, state):
         import torch
-        x = torch.as_tensor(self.feature_builder(evaluations, belief, state), dtype=torch.float32)
+        x = torch.as_tensor(self.feature_builder(evaluations, belief, state), dtype=torch.float32,
+                            device=self.device)
         x = torch.nan_to_num(x, nan=0.0, posinf=10.0, neginf=-10.0)
         if x.ndim == 2: x = x[None, ...]
         self.model.eval()
         with torch.no_grad():
             logits, value = self.model(x)
-        logp = torch.log_softmax(logits[0], -1)
+        # Record the probability distribution that actually performed the
+        # sampling.  PPO's old_log_prob must use the same temperature-scaled
+        # distribution as the action sampler.
         probs = torch.softmax(logits[0] / max(self.temperature, 1e-6), -1)
+        logp = torch.log(probs.clamp_min(1e-12))
         action = int(torch.multinomial(probs, 1).item()) if self.stochastic else int(torch.argmax(logits[0]).item())
         self.records.append({'observation': x[0].tolist(), 'action': action,
+                             'virtual_time_before': float(state.virtual_time_s),
                              'log_prob': float(logp[action]), 'value': float(value[0])})
         return action
     def reset(self): self.records = []
@@ -100,14 +114,26 @@ def legacy_evaluation_features(evaluations, belief, state):
         out.append(base+interactions)
     return out
 
-def load_candidate_policy(checkpoint, *, hidden=128, n_channels=20):
+def load_candidate_policy(checkpoint, *, hidden=128, n_channels=20, expected_problem=4):
     """Load a Candidate-PPO checkpoint; raises clearly on unavailable torch."""
     import torch
-    from .candidate_ppo import CandidateActorCritic
+    from .candidate_ppo import CandidateActorCritic, MODEL_SCHEMA
     dim = 10 + n_channels * 10
-    model = CandidateActorCritic(dim, hidden=hidden)
     blob = torch.load(checkpoint, map_location='cpu')
-    if blob.get('input_dim', dim) != dim or blob.get('problem', 4) != 4:
+    legacy_schema = blob.get('schema') is None and blob.get('input_dim') == dim
+    if (not legacy_schema and blob.get('schema') != MODEL_SCHEMA
+            or blob.get('input_dim', dim) != dim
+            or blob.get('problem', 4) != expected_problem):
         raise ValueError('checkpoint schema/problem mismatch')
-    model.load_state_dict(blob.get('state_dict', blob)); model.eval()
-    return TorchCandidatePolicy(model, legacy_evaluation_features), model
+    state = blob.get('state_dict', blob)
+    # Accept the frozen checkpoint produced before candidate-set relational
+    # layers were added.  It is structurally valid for the same 210-D input;
+    # loading it through a matching compatibility model preserves reproducible
+    # validation while new checkpoints continue to use the current model.
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = CandidateActorCritic(dim, hidden=hidden).to(device)
+    try:
+        model.load_state_dict(state); model.eval()
+    except RuntimeError as exc:
+        raise ValueError('checkpoint architecture mismatch; retraining is required') from exc
+    return TorchCandidatePolicy(model, legacy_evaluation_features, device=device), model

@@ -72,11 +72,24 @@ class NBVResult:
     hypotheses: List[Point] = field(default_factory=list)
     n_candidates: int = 0
     improved: bool = False              # worst_case_diameter < current_diameter
+    expected_diameter: float = 0.0
+    guaranteed_miss_rate: float = 0.0
 
     @property
     def expected_shrink(self) -> float:
         """A non-negative worst-case diameter reduction the viewpoint guarantees."""
         return max(0.0, self.current_diameter - self.worst_case_diameter)
+
+
+@dataclass(frozen=True)
+class ViewpointOpportunity:
+    point: Point
+    worst_case_diameter: float
+    information_gain: float
+    route_distance: float
+    family: str
+    expected_diameter: float = 0.0
+    guaranteed_miss_rate: float = 0.0
 
 
 class MinimaxNBV:
@@ -99,6 +112,7 @@ class MinimaxNBV:
         perp_standoffs: Sequence[float] = (400.0, 800.0, 1200.0),
         disc_sides: int = 16,
         max_robot_coord: float = 2.0e6,   # robot domain bound (题面: |coord| ≤ 2e6)
+        objective: str = "minimax",
     ) -> None:
         self.range_radius = float(range_radius)
         self.detect_lower_bound = float(detect_lower_bound)
@@ -114,6 +128,9 @@ class MinimaxNBV:
         self.perp_standoffs = tuple(float(s) for s in perp_standoffs)
         self.disc_sides = int(disc_sides)
         self.max_robot_coord = float(max_robot_coord)
+        if objective not in ("minimax", "expected", "time", "greedy"):
+            raise ValueError("objective must be 'minimax', 'expected', 'time', or 'greedy'")
+        self.objective = objective
 
     # -- representative hypotheses P (≤ n_hypotheses) ----------------------
 
@@ -235,6 +252,30 @@ class MinimaxNBV:
                 worst = d
         return worst
 
+    def objective_metrics(self, poly: Sequence[Point], q: Point,
+                          hypotheses: Sequence[Point], current_diameter: float):
+        """Return expected diameter and guaranteed miss rate for P2 reporting.
+
+        These are planning metrics only.  A hypothesis outside ``R_lo`` is not
+        credited with a bearing, matching the hard lower-bound guard; the
+        resulting rates must never be used as a certificate.
+        """
+        posts = [self.post_measurement_diameter(poly, q, p, current_diameter)
+                 for p in hypotheses]
+        expected = sum(posts) / len(posts) if posts else current_diameter
+        misses = sum(dist(q, p) > self.detect_lower_bound for p in hypotheses)
+        return expected, (misses / len(hypotheses) if hypotheses else 1.0)
+
+    def guaranteed_range_violation(self, poly: Sequence[Point], q: Point) -> bool:
+        """Whether *any* point in convex ``poly`` may lie beyond ``R_lo``.
+
+        The squared distance to ``q`` is convex, so its maximum over a convex
+        polygon is attained at a vertex.  This is the whole-domain safety gate;
+        representative hypotheses remain an approximation only for information
+        shrinkage, never for guaranteed detection.
+        """
+        return bool(poly) and max(dist(q, p) for p in poly) > self.detect_lower_bound + 1e-9
+
     def travel_time(self, robot_pos: Point, q: Point) -> float:
         return dist(robot_pos, q) / self.speed + self.measure_s
 
@@ -289,13 +330,35 @@ class MinimaxNBV:
             if scanned and any(dist(q, s) <= eps for s in scanned):
                 continue
             u = self.worst_case_diameter(poly, q, hyps, current)
+            expected, miss_rate = self.objective_metrics(poly, q, hyps, current)
             # Approach term: worst-case distance from q to the region. It only breaks
             # ties in u — when no viewpoint can guarantee a shrink (a region too large
             # for the guaranteed radius, so every u == current), it homes the robot to
             # the point covering the region best, i.e. back into detection range.
             reach = max(dist(q, p) for p in hyps)
-            score = u + self.lambda_t * self.travel_time(robot_pos, q) + self.approach_weight * reach
-            key = (round(score, 6), round(u, 6))
+            if self.objective == "greedy":
+                # Greedy ablation: maximize immediate guaranteed diameter
+                # reduction, with travel as the deterministic tie-breaker.
+                score = -(current - u) + self.lambda_t * self.travel_time(robot_pos, q)
+            elif self.objective == "expected":
+                score = expected + self.lambda_t * self.travel_time(robot_pos, q) \
+                        + self.approach_weight * reach
+            elif self.objective == "time":
+                score = self.travel_time(robot_pos, q) + self.lambda_t * expected \
+                        + self.approach_weight * miss_rate * current
+            else:
+                score = u + self.lambda_t * self.travel_time(robot_pos, q) + self.approach_weight * reach
+            # Robust mode is lexicographic: first prefer viewpoints that keep
+            # every representative hypothesis inside the guaranteed detection
+            # radius, then optimise its selected objective.  Without this gate,
+            # two candidates with the same unchanged worst-case diameter could
+            # be ordered by travel cost and the planner would silently choose a
+            # possible-NO_SIGNAL standoff.
+            if self.objective == "minimax":
+                domain_violation = int(self.guaranteed_range_violation(poly, q))
+                key = (domain_violation, round(score, 6), round(u, 6))
+            else:
+                key = (round(score, 6), round(u, 6))
             if best is None or key < best_key:
                 best_key = key
                 best = NBVResult(
@@ -306,8 +369,35 @@ class MinimaxNBV:
                     hypotheses=list(hyps),
                     n_candidates=len(cands),
                     improved=u < current - 1e-9,
+                    expected_diameter=expected,
+                    guaranteed_miss_rate=miss_rate,
                 )
         return best
+
+    def propose(self, channel, robot_pos: Point, *, limit: int = 8) -> List[ViewpointOpportunity]:
+        """Return a deterministic, geometry-validated opportunity set."""
+        poly = channel.F_c or []
+        if len(poly) < 3:
+            return []
+        current = self._planning_diameter(channel, poly)
+        sampler = getattr(channel, "sample_effective_hypotheses", None)
+        hyps = sampler(limit=self.n_hypotheses, spacing=60.0) if sampler else self.representative_hypotheses(poly)
+        if not hyps:
+            return []
+        scanned = [(float(b.point[0]), float(b.point[1])) for b in getattr(channel, "bearings", []) or []]
+        scanned += [(float(d.center[0]), float(d.center[1])) for d in getattr(channel, "negative_discs", []) or []]
+        out = []
+        for q in self.candidate_viewpoints(channel, robot_pos):
+            if any(dist(q, s) <= self.exclude_scanned_eps for s in scanned):
+                continue
+            post = self.worst_case_diameter(poly, q, hyps, current)
+            expected, miss_rate = self.objective_metrics(poly, q, hyps, current)
+            family = "mec_center" if getattr(channel, "mec_center", None) == q else "sampled"
+            out.append(ViewpointOpportunity(q, post, max(0.0, current - post),
+                                            self.travel_time(robot_pos, q), family,
+                                            expected, miss_rate))
+        out.sort(key=lambda o: (-o.information_gain, o.route_distance, o.point))
+        return out[:max(0, int(limit))]
 
     def completion_point(self, channel, robot_pos: Point, kill_radius: float = 20.0) -> Optional[Point]:
         """Return a candidate whose robust post-measurement diameter fits kill radius."""

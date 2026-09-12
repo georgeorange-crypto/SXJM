@@ -33,6 +33,7 @@ from sxjm_core.geometry import dist
 from ..belief import ChannelStatus
 from ..core import MacroActionType, MacroCandidate
 from .future_cost import CostView, DetectedRegion, FutureCostEstimator, build_cost_view
+from .opportunities import pareto_prune
 
 Point = Tuple[float, float]
 
@@ -155,6 +156,17 @@ class OutcomePredictor:
             if focus_status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED)
             else self.p_unknown_channel
         )
+        # Prefer an empirical geometry estimate whenever the belief exposes
+        # deterministic feasible samples.  The fixed tables remain the explicit
+        # fallback for legacy/custom belief objects without geometry.
+        samples = []
+        if focus is not None:
+            region = belief[focus]
+            sampler = getattr(region, "sample_points", None)
+            if callable(sampler):
+                samples = list(sampler(limit=64, spacing=60.0) or [])
+        if samples:
+            table = self._geometry_outcome_table(samples, q, focus_status)
         outs: List[Outcome] = []
         for label, prob in table:
             if label == "no_signal":
@@ -164,6 +176,27 @@ class OutcomePredictor:
             elif label == "near":
                 outs.append(Outcome(label, prob, self._view_near(focus, focus_status, q, base)))
         return outs
+
+    def _geometry_outcome_table(self, samples, point, focus_status):
+        """Estimate scan outcomes from feasible source geometry, not a prior.
+
+        A close feasible sample supports ``near``; feasible samples inside the
+        sensing radius support ``detect``; the residual mass is ``no_signal``.
+        This is a planning likelihood only—the executor and hard certificate
+        remain authoritative for actual observations.
+        """
+        from math import hypot
+        n = float(len(samples))
+        near = sum(hypot(float(x) - point[0], float(y) - point[1]) <= 5.0 for x, y in samples) / n
+        detect = sum(hypot(float(x) - point[0], float(y) - point[1]) <= self.detection_radius for x, y in samples) / n
+        near = min(1.0, near)
+        detect = max(near, min(1.0, detect))
+        no_signal = max(0.0, 1.0 - detect)
+        # Keep the three-outcome interface and normalize against floating error.
+        total = no_signal + max(0.0, detect - near) + near
+        return (("no_signal", no_signal / total),
+                ("detect", (detect - near) / total),
+                ("near", near / total))
 
     def _view_no_signal(self, candidate: MacroCandidate, q: Point, base: CostView) -> CostView:
         v = base.copy()
@@ -233,6 +266,9 @@ class RecedingHorizonPlanner:
         measure_s: float = 5.0,
         clear_hit_s: float = 5.0,
         voi_weight: float = 0.0,
+        pareto_candidates: bool = False,
+        route_synergy_weight: float = 0.0,
+        age_weight: float = 0.01,
     ) -> None:
         self.fce = future_cost or FutureCostEstimator(
             speed=speed, measure_s=measure_s, clear_hit_s=clear_hit_s
@@ -247,10 +283,14 @@ class RecedingHorizonPlanner:
         self.measure_s = float(measure_s)
         self.clear_hit_s = float(clear_hit_s)
         self.voi_weight = float(voi_weight)
+        self.pareto_candidates = bool(pareto_candidates)
+        self.route_synergy_weight = float(route_synergy_weight)
+        self.age_weight = float(age_weight)
 
     # -- public -------------------------------------------------------------
 
     def plan(self, belief, certificate, state, candidates: Sequence[MacroCandidate]) -> PlanResult:
+        candidates = self._pareto_candidates(candidates) if self.pareto_candidates else list(candidates)
         base = build_cost_view(belief, certificate, state)
         evals: List[CandidateEvaluation] = []
         for a in candidates:
@@ -258,9 +298,11 @@ class RecedingHorizonPlanner:
             jvals = [(o.label, o.prob, self._cost_to_go(o.view, self.horizon - 1)) for o in outs]
             jagg = self._aggregate(jvals)
             c = float(a.expected_time)
-            evals.append(
-                CandidateEvaluation(a, c, jagg, c + jagg, [(lbl, j) for lbl, _, j in jvals])
-            )
+            synergy = float(getattr(a, "route_synergy", 0.0))
+            age = float(getattr(a, "meta", {}).get("task_age_s", 0.0))
+            q = c + jagg - self.route_synergy_weight * max(0.0, synergy) - self.age_weight * max(0.0, age)
+            evals.append(CandidateEvaluation(a, c, jagg, q,
+                                              [(lbl, j) for lbl, _, j in jvals]))
         if evals and self.voi_weight > 0.0:
             # VOI is a secondary task-time signal. Safety remains unchanged:
             # candidates were generated and masked by the mathematical planner.
@@ -279,6 +321,21 @@ class RecedingHorizonPlanner:
             self.horizon,
             self.outcome_mode,
         )
+
+    @staticmethod
+    def _pareto_candidates(candidates: Sequence[MacroCandidate]) -> List[MacroCandidate]:
+        """Prune only optional sensing candidates; safety/completion actions stay."""
+        protected = [c for c in candidates if c.action_type in
+                     (MacroActionType.CLEAR, MacroActionType.VERIFY, MacroActionType.EXIT)]
+        sensing = [c for c in candidates if c not in protected]
+        if len(sensing) < 2:
+            return list(candidates)
+        kept = pareto_prune(
+            sensing,
+            cost=lambda c: getattr(c, "route_marginal", 0.0) or c.expected_time,
+            gain=lambda c: float(c.refinement_gain) + float(c.certificate_gain),
+        )
+        return protected + kept
 
     def value_of_information(self, candidate: MacroCandidate, belief, certificate, state) -> float:
         """Expected task-time reduction per second spent on an option."""

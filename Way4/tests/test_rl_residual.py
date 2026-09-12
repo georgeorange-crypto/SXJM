@@ -102,6 +102,15 @@ def test_feature_dims_are_consistent():
     assert FEATURE_DIM == CANDIDATE_FEATURE_DIM + GLOBAL_FEATURE_DIM
 
 
+def test_stop_has_nonzero_one_hot_feature():
+    belief, state = _belief(), _state()
+    cert = _certificate(belief)
+    cand = MacroCandidate(MacroActionType.STOP, (0.0, 0.0), scan_channels=(1,))
+    res = RecedingHorizonPlanner().plan(belief, cert, state, [cand])
+    row = evaluation_features(res.evaluations[0], belief, state, n_candidates=1)
+    assert sum(row[:8]) == pytest.approx(1.0)
+
+
 def test_feature_matrix_row_width_matches_FEATURE_DIM():
     belief, state = _belief(), _state()
     cert = _certificate(belief)

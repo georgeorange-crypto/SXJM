@@ -13,6 +13,7 @@ from .tsp import (
     held_karp_open,
     nearest_neighbor_open,
     two_opt_open,
+    route_repair_open,
 )
 from .unified import ServiceOpportunity, UnifiedRoutePlanner
 
@@ -27,6 +28,7 @@ __all__ = [
     "held_karp_open",
     "nearest_neighbor_open",
     "two_opt_open",
+    "route_repair_open",
     "ServiceOpportunity",
     "UnifiedRoutePlanner",
 ]

@@ -1,0 +1,11 @@
+{
+  "checkpoint": "runs/candidate_ppo_p4_large.pt",
+  "seeds": [
+    2050
+  ],
+  "math": [],
+  "ppo": [],
+  "paired": [],
+  "complete": false,
+  "startup_error": "ValueError: checkpoint schema/problem mismatch"
+}

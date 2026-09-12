@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-12",
+  "authority_root": "SXJM/Way4",
+  "modified_scope": ["SXJM/Way4/src", "SXJM/Way4/tests", "SXJM/Way4/IMPLEMENTATION_CHECKLIST.md"],
+  "commands": {
+    "targeted": "D:\\Anaconda3\\envs\\gesture_env\\python.exe -m pytest SXJM/Way4/tests/test_spatial_stops.py SXJM/Way4/tests/test_joint_route_cost.py SXJM/Way4/tests/test_batch_stop.py SXJM/Way4/tests/test_scheduler_starvation.py -q",
+    "full": "D:\\Anaconda3\\envs\\gesture_env\\python.exe -m pytest SXJM/Way4/tests -q"
+  },
+  "results": {
+    "targeted": {"passed": 21, "failed": 0, "duration_s": 0.35, "prior_passes": 25},
+    "full": {"passed": 261, "failed": 0, "skipped": 12, "duration_s": 1993.14},
+    "task_pool_pipeline": {"passed": 8, "failed": 0, "skipped": 4, "duration_s": 5.59},
+    "route_assignment": {"passed": 4, "failed": 0, "duration_s": 0.24},
+    "viewpoint_opportunities": {"passed": 10, "failed": 0, "duration_s": 0.40},
+    "pareto_planner": {"passed": 7, "failed": 0, "skipped": 2, "duration_s": 5.18}
+    ,"future_cost_synergy": {"passed": 13, "failed": 0, "duration_s": 1.04}
+    ,"pipeline_wait_assignment": {"passed": 6, "failed": 0, "skipped": 2, "duration_s": 5.91},
+    "route_aware_spatial_stop": {"passed": 8, "failed": 0, "duration_s": 0.25},
+    "service_features": {"passed": 1, "failed": 0, "duration_s": 6.96},
+    "synergy_ranking": {"passed": 1, "failed": 0, "duration_s": 0.53}
+    ,"unified_route_pipeline": {"passed": 11, "failed": 0, "duration_s": 5.56}
+  },
+  "implemented": [
+    "STOP feature one-hot and frozen schema metadata",
+    "checkpoint schema mismatch rejection",
+    "explicit route_marginal and route_saving candidate fields",
+    "SpatialStop route feature population",
+    "spatial planner joint-route default",
+    "pure RemainingTask and Pareto opportunity primitives"
+  ],
+  "not_yet_proven": [
+    "WAIT_FOR_ROUTE and starvation guard end-to-end",
+    "unified RemainingTask route",
+    "Pareto viewpoint opportunity sets",
+    "large-sample RL training/evaluation",
+    "fair same-case V6 benchmark",
+    "automatic route-opportunity assignment in route generation",
+    "viewpoint opportunity candidate families",
+    "full unified task route optimization",
+    "full route synergy and large-sample evaluation",
+    "test gate 2053-2059: 7/7 full-clear, 0 error"
+  ]
+}

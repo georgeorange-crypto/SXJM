@@ -10,10 +10,10 @@ def test_time_is_primary_transition_reward():
 
 
 def test_full_clear_is_a_strict_terminal_cliff():
-    cfg = RewardConfig(full_clear_bonus=100.0)
-    assert terminal_reward(True, cfg) == 100.0
-    assert terminal_reward(False, cfg) == 0.0
-    assert episode_return(10.0, True, cfg) > episode_return(0.0, False, cfg)
+    cfg = RewardConfig()
+    assert terminal_reward(True, cfg) == 0.0
+    assert terminal_reward(False, cfg, 2) == -102.0
+    assert episode_return(10.0, True, cfg) > episode_return(0.0, False, cfg, 1)
 
 
 def test_critic_is_negative_remaining_time_plus_bounded_residual_contract():

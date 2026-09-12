@@ -32,6 +32,7 @@ from sxjm_core.geometry import Point, dist
 from ..channels import SchedulerMode
 from ..belief import ChannelStatus
 from ..core import AnalyticalCostModel, MacroActionType, RobotState, SpatialStop
+from ..toolbox import dbscan
 from .candidates import CandidateGenerator
 
 
@@ -72,7 +73,7 @@ class _Cluster:
     every member's scan batch; ``refine_gain`` is the largest member NBV shrink (a
     conservative stand-in until Phase D scores routes properly)."""
 
-    __slots__ = ("target", "channels", "refine_gain", "n_members", "clears")
+    __slots__ = ("target", "channels", "refine_gain", "n_members", "clears", "members")
 
     def __init__(self, first) -> None:
         self.target: Point = (float(first.target[0]), float(first.target[1]))
@@ -80,10 +81,12 @@ class _Cluster:
         self.refine_gain: float = 0.0
         self.n_members: int = 0
         self.clears: list = []
+        self.members: List[Point] = []
         self.add(first)
 
     def add(self, cand) -> None:
         self.n_members += 1
+        self.members.append((float(cand.target[0]), float(cand.target[1])))
         for ch in cand.scan_channels:
             ci = int(ch)
             if ci not in self.channels:
@@ -100,11 +103,15 @@ class SpatialStopGenerator:
         base: Optional[CandidateGenerator] = None,
         cost_model: Optional[AnalyticalCostModel] = None,
         cluster_radius: float = 1000.0,
+        clustering: str = "dbscan",
     ) -> None:
         self.base = base if base is not None else CandidateGenerator(cost_model=cost_model)
         # keep timing consistent with the base generator when no explicit model given
         self.cost = cost_model if cost_model is not None else self.base.cost
         self.cluster_radius = float(cluster_radius)
+        if clustering not in ("dbscan", "none"):
+            raise ValueError("clustering must be 'dbscan' or 'none'")
+        self.clustering = clustering
 
     # -- public -------------------------------------------------------------
 
@@ -134,6 +141,8 @@ class SpatialStopGenerator:
             # CLEAR candidates (already in ``cands``); routing pure-clear sequences is
             # Phase D (unified remaining-task route), not here.
             return []
+        if self.clustering == "none":
+            return []
         clusters = self._cluster_scans(scans)
         self._attach_clears(clusters, clears)
         bundles: List[SpatialStop] = []
@@ -146,20 +155,26 @@ class SpatialStopGenerator:
         return bundles
 
     def _cluster_scans(self, scans: Sequence) -> List[_Cluster]:
-        """Greedy proximity clustering: a scan joins the first existing cluster whose
-        representative is within ``cluster_radius``, else it seeds a new one. Cheap and
-        order-stable; exact cluster shape does not affect correctness (bundles are only
-        added options), only how aggressively co-located work is merged."""
+        """DBSCAN task clustering with singleton noise preserved.
+
+        Unlike centroid clustering, DBSCAN can discover an unknown number of
+        dense spatial task groups and does not force distant outliers into a
+        bundle.  Noise points remain individual clusters, so this additive
+        wrapper never removes a legacy candidate or weakens completeness.
+        """
+        points = [(float(c.target[0]), float(c.target[1])) for c in scans]
+        labels = dbscan(points, self.cluster_radius, min_samples=2)
+        grouped = {}
+        for i, label in enumerate(labels):
+            key = ("noise", i) if label < 0 else ("cluster", int(label))
+            grouped.setdefault(key, []).append(scans[i])
         clusters: List[_Cluster] = []
-        for c in scans:
-            placed = False
-            for cl in clusters:
-                if dist((float(c.target[0]), float(c.target[1])), cl.target) <= self.cluster_radius:
-                    cl.add(c)
-                    placed = True
-                    break
-            if not placed:
-                clusters.append(_Cluster(c))
+        for key in sorted(grouped, key=lambda x: (x[0], x[1])):
+            members = grouped[key]
+            cl = _Cluster(members[0])
+            for c in members[1:]:
+                cl.add(c)
+            clusters.append(cl)
         return clusters
 
     def _attach_clears(self, clusters: Sequence[_Cluster], clears: Sequence) -> None:
@@ -181,12 +196,16 @@ class SpatialStopGenerator:
                 best.clears.append(cc)
 
     def _make_stop(self, cl: _Cluster, state: RobotState) -> SpatialStop:
+        # Route-aware representative: choose the member minimizing travel from
+        # the current pose while retaining the legacy first point as a fallback.
+        members = getattr(cl, "members", [cl.target])
+        target = min(members, key=lambda p: (dist(state.pos, p), p))
         channels = tuple(cl.channels)
         clear_channels = tuple(int(c.clear_channel) for c in cl.clears)
         clear_targets = tuple((float(c.target[0]), float(c.target[1])) for c in cl.clears)
         stop = SpatialStop(
             action_type=MacroActionType.STOP,
-            target=cl.target,
+            target=target,
             scan_channels=channels,
             clear_channels=clear_channels,
             clear_targets=clear_targets,
@@ -196,9 +215,25 @@ class SpatialStopGenerator:
         # planner ranks by expected_time + future cost, so the honest chained duration
         # is what matters. Phase D replaces this with a route-aware subadditive Ĵ.
         stop.certificate_gain = float(len(channels))
+        # First-order, executable route semantics for the new feature contract.
+        # The complete insertion delta is supplied by the route planner when a
+        # route context exists; this conservative local value is never mistaken
+        # for that global quantity.
         stop.expected_time = self._stop_time(state, stop)
+        stop.route_marginal = float(stop.expected_time)
+        stop.route_saving = max(0.0, float(sum(
+            getattr(c, "expected_time", 0.0) for c in cl.clears
+        ) + max(0, cl.n_members - 1) * self.cost.measure_s - stop.expected_time))
+        stop.route_gain = stop.route_saving
+        stop.route_synergy = stop.route_saving
+        stop.n_measure_services = len(stop.scan_channels)
+        stop.n_clear_services = len(stop.clear_channels)
+        stop.service_density = stop.n_services / max(1.0, stop.expected_time)
         stop.meta["bundle_members"] = cl.n_members
         stop.meta["bundle_clears"] = len(clear_channels)
+        stop.meta["bundle_internal_travel"] = float(sum(
+            dist(target, p) for p in members if p != target
+        ))
         return stop
 
     def _stop_time(self, state: RobotState, stop: SpatialStop) -> float:

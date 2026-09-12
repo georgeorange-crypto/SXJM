@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from sxjm_core.geometry import bearing_deg, min_enclosing_circle, norm_deg
+from way4.certificate.fallback import ray_sweep_points, triangular_clear_sweep_points
 
 Point = Tuple[float, float]
 
@@ -264,6 +265,47 @@ class HomingController:
         fix.refresh()
         if fix.est is not None and fix.region_r <= self.prune_radius_m:
             return self._try_clear(c, fix.est)
+        # P4 deterministic rescue: after the normal orbit has stalled, sweep a
+        # narrow zig-zag around the last *observed* bearing.  This is deliberately
+        # a sensing fallback, not a certificate: only a new bearing can update
+        # the fix, and clearing remains guarded by the MEC threshold below.
+        if self._ray_sweep_rescue(c, fix):
+            return True
+        if fix.est is not None and fix.region_r <= 100.0:
+            if self._triangular_clear_rescue(c, fix):
+                return True
+        return False
+
+    def _ray_sweep_rescue(self, c: int, fix: _Fix) -> bool:
+        """Probe a last reliable bearing with a bounded transverse sweep.
+
+        The sweep is useful for a directional source whose later orbit points
+        fall in its blind half-plane.  It never subtracts a range disc from a
+        directional NO_SIGNAL and never clears from geometry of the path alone.
+        """
+        if not fix.obs:
+            return False
+        origin, bearing = fix.obs[-1]
+        length = min(1500.0, max(0.0, self.reliable_region_m * 2.0))
+        for point in ray_sweep_points(origin, bearing, length, step_m=15.0):
+            if self._finished:
+                return False
+            result = self._measure_into(c, fix, point)
+            if result == "cleared":
+                return True
+            fix.refresh()
+            if fix.est is not None and fix.region_r <= self.clear_margin_m:
+                if self._try_clear(c, fix.est):
+                    return True
+        return False
+
+    def _triangular_clear_rescue(self, c: int, fix: _Fix) -> bool:
+        """Attempt real clears on a 33 m local triangular sweep."""
+        for point in triangular_clear_sweep_points(fix.est, radius_m=50.0, spacing_m=33.0):
+            if self._finished:
+                return False
+            if self._try_clear(c, point):
+                return True
         return False
 
     def _establish_baseline(self, c: int, fix: _Fix) -> bool:

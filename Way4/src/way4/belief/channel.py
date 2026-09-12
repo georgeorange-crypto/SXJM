@@ -137,6 +137,9 @@ class ChannelBelief:
     connected_components: int = 1
     scan_count: int = 0
     last_scan_time: float = 0.0
+    first_detect_time: Optional[float] = None
+    localized_time: Optional[float] = None
+    cleared_time: Optional[float] = None
 
     # -- observation intake (DESIGN.md §5) ---------------------------------
 
@@ -233,6 +236,8 @@ class ChannelBelief:
         self.bearings.append(BearingObs(point, norm_deg(svd_deg), time))
         self.scan_count += 1
         self.last_scan_time = max(self.last_scan_time, time)
+        if self.first_detect_time is None:
+            self.first_detect_time = float(time)
         self._rebuild()
 
     def record_near(self, point: Point, time: float = 0.0) -> None:
@@ -241,6 +246,8 @@ class ChannelBelief:
         self.near_points.append(point)
         self.scan_count += 1
         self.last_scan_time = max(self.last_scan_time, time)
+        if self.first_detect_time is None:
+            self.first_detect_time = float(time)
         self._rebuild()
 
     # -- feasible-set reconstruction ---------------------------------------
@@ -291,6 +298,7 @@ class ChannelBelief:
         self.principal_axis = (float(vec[0]), float(vec[1]))
 
     def _update_status(self) -> None:
+        previous = self.status
         if self.status in (ChannelStatus.CLEARED, ChannelStatus.ABSENT_CERTIFIED):
             return
         if not self.bearings and not self.near_points:
@@ -303,6 +311,8 @@ class ChannelBelief:
             self.status = ChannelStatus.INITIALIZED
         else:
             self.status = ChannelStatus.DETECTED
+        if self.status == ChannelStatus.LOCALIZED and previous != ChannelStatus.LOCALIZED:
+            self.localized_time = float(self.last_scan_time)
 
     @property
     def initialization_ready(self) -> bool:
@@ -351,6 +361,28 @@ class ChannelBelief:
                  * max(diversity, 0.05) * distance_term * debt_term)
         return max(0.0, min(1.0, float(score)))
 
+    def readiness_snapshot(self, robot_pos: Optional[Point] = None,
+                           coverage_debt: float = 0.0) -> dict:
+        """Structured readiness summary for planners and audit artifacts.
+
+        Values are descriptive features only; this snapshot cannot certify
+        presence/absence or localization.
+        """
+        return {
+            "status": self.status.value,
+            "area": float(self.area),
+            "diameter": float(self.diameter),
+            "mec_radius": float(self.mec_radius),
+            "kappa": float(self.kappa),
+            "connected_components": int(self.connected_components),
+            "coverage_debt": max(0.0, float(coverage_debt)),
+            "initialization_ready": bool(self.initialization_ready),
+            "robot_distance": (float(dist(robot_pos, self.mec_center))
+                               if robot_pos is not None and self.mec_center is not None
+                               else None),
+            "readiness_score": self.readiness_score(robot_pos, coverage_debt),
+        }
+
     # -- queries ------------------------------------------------------------
 
     @property
@@ -381,8 +413,9 @@ class ChannelBelief:
 
     # -- state transitions (called by executor / certificate manager) ------
 
-    def mark_cleared(self) -> None:
+    def mark_cleared(self, time: float = 0.0) -> None:
         self.status = ChannelStatus.CLEARED
+        self.cleared_time = float(time)
 
     def mark_present_unobserved(self) -> bool:
         """Apply the cardinality-forced presence transition.

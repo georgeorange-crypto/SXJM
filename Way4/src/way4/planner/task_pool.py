@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Sequence
 
 from ..belief import ChannelStatus
-from .opportunities import RemainingTask
+from .opportunities import RemainingTask, insertion_cost
 
 
 @dataclass
@@ -64,6 +64,24 @@ class RemainingTaskPool:
             item.wait_age = 0
             item.skipped_count = 0
             item.assigned_waypoint = None
+
+    def assign_route_opportunities(self, route, dedicated_costs: Dict[int, float],
+                                   *, viable=lambda _c, _p: True,
+                                   delay_safe=lambda _c, _p: True) -> dict:
+        """Bind waiting channels to the cheapest viable future route waypoint."""
+        points = list(route)
+        assignments = {}
+        for channel in list(self.waiting):
+            options = [(insertion_cost(points, p), p) for p in points[1:]
+                       if viable(channel, p)]
+            if not options:
+                continue
+            route_cost, point = min(options, key=lambda x: (x[0], x[1]))
+            if self.consider_wait(channel, dedicated_costs.get(channel, float("inf")),
+                                  route_cost, point,
+                                  delay_safe=bool(delay_safe(channel, point))):
+                assignments[channel] = point
+        return assignments
 
     def snapshot(self) -> dict:
         return {str(c): {

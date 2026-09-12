@@ -50,6 +50,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Set, Tuple
+from math import isfinite
 
 Point = Tuple[float, float]
 
@@ -89,6 +90,61 @@ class RouteMetrics:
     # context (not in the P0 list, but needed to read the six above honestly)
     n_stops: int = 0
     n_services: int = 0
+    total_distance: float = 0.0
+    clear_distance: float = 0.0
+    n_longjump: int = 0
+    n_crossing: int = 0
+    backtrack_m: float = 0.0
+    repeated_edge_m: float = 0.0
+    unnecessary_return_m: float = 0.0
+
+
+@dataclass(frozen=True)
+class EfficiencyMetrics:
+    """Canonical episode efficiency ratios (AE01--AE07)."""
+    wasted_time_ratio: float = 0.0
+    backtrack_ratio: float = 0.0
+    repeated_edge_ratio: float = 0.0
+    unnecessary_return_ratio: float = 0.0
+    scan_efficiency_s_per_useful_observation: float = 0.0
+    lower_bound_ratio: Optional[float] = None
+    route_efficiency: Optional[float] = None
+
+
+def compute_efficiency_metrics(*, total_time_s, no_progress_time_s=0.0,
+                               move_distance_m=0.0, backtrack_m=0.0,
+                               repeated_edge_m=0.0, unnecessary_return_m=0.0,
+                               scan_time_s=0.0, useful_observations=0,
+                               lower_bound_s=None, route_lower_bound_m=None):
+    """Compute ratios with explicit zero-denominator semantics."""
+    vals = (total_time_s, no_progress_time_s, move_distance_m, backtrack_m,
+            repeated_edge_m, unnecessary_return_m, scan_time_s)
+    if not all(isfinite(float(v)) for v in vals) or any(float(v) < 0 for v in vals):
+        raise ValueError('efficiency inputs must be finite and nonnegative')
+    t, move = float(total_time_s), float(move_distance_m)
+    useful = int(useful_observations)
+    if useful < 0: raise ValueError('useful observations must be nonnegative')
+    lb = None if lower_bound_s is None else float(lower_bound_s)
+    route_lb = None if route_lower_bound_m is None else float(route_lower_bound_m)
+    if lb is not None and (not isfinite(lb) or lb <= 0): raise ValueError('lower bound must be positive')
+    if route_lb is not None and (not isfinite(route_lb) or route_lb <= 0): raise ValueError('route lower bound must be positive')
+    return EfficiencyMetrics(
+        wasted_time_ratio=float(no_progress_time_s) / t if t else 0.0,
+        backtrack_ratio=float(backtrack_m) / move if move else 0.0,
+        repeated_edge_ratio=float(repeated_edge_m) / move if move else 0.0,
+        unnecessary_return_ratio=float(unnecessary_return_m) / move if move else 0.0,
+        scan_efficiency_s_per_useful_observation=float(scan_time_s) / useful if useful else 0.0,
+        lower_bound_ratio=t / lb if lb else None,
+        route_efficiency=move / route_lb if route_lb else None,
+    )
+
+
+def _segments_cross(a: Point, b: Point, c: Point, d: Point) -> bool:
+    def o(p, q, r):
+        return (q[0]-p[0])*(r[1]-p[1]) - (q[1]-p[1])*(r[0]-p[0])
+    e = 1e-9
+    x, y, z, w = o(a,b,c), o(a,b,d), o(c,d,a), o(c,d,b)
+    return ((x > e and y < -e) or (x < -e and y > e)) and ((z > e and w < -e) or (z < -e and w > e))
 
 
 @dataclass
@@ -169,6 +225,31 @@ def compute_route_metrics(
         else:
             clear_delta += _dist(prev, s.anchor)   # terminal clear: one-way detour
 
+    points = [start] + [s.anchor for s in stops]
+    legs = list(zip(points, points[1:]))
+    lengths = [_dist(a, b) for a, b in legs]
+    backtrack = 0.0
+    repeated = 0.0
+    for i, ((a, b), length) in enumerate(zip(legs, lengths)):
+        if length == 0.0:
+            continue
+        if i:
+            (pa, pb) = legs[i - 1]
+            vx, vy = b[0] - a[0], b[1] - a[1]
+            wx, wy = pb[0] - pa[0], pb[1] - pa[1]
+            denom = length * _dist(pa, pb)
+            if denom and (vx * wx + vy * wy) / denom < -0.5:
+                backtrack += length
+        for j in range(i):
+            old_a, old_b = legs[j]
+            if ((_dist(a, old_b) <= stop_tol and _dist(b, old_a) <= stop_tol)
+                    or (_dist(a, old_a) <= stop_tol and _dist(b, old_b) <= stop_tol)):
+                repeated += length
+                break
+    unnecessary_return = revisit
+    crossings = sum(_segments_cross(*legs[i], *legs[j])
+                    for i in range(len(legs)) for j in range(i + 2, len(legs)))
+
     return RouteMetrics(
         services_per_stop=(n_services / n_stops) if n_stops else 0.0,
         pure_refine_travel=pure_refine,
@@ -178,4 +259,11 @@ def compute_route_metrics(
         clear_insertion_delta=clear_delta,
         n_stops=n_stops,
         n_services=n_services,
+        total_distance=sum(lengths),
+        clear_distance=sum(s.leg_in for s in stops if s.has_clear),
+        n_longjump=sum(d > 1000.0 for d in lengths),
+        n_crossing=int(crossings),
+        backtrack_m=backtrack,
+        repeated_edge_m=repeated,
+        unnecessary_return_m=unnecessary_return,
     )

@@ -1,0 +1,283 @@
+{
+  "rows": [
+    {
+      "seed": 1000,
+      "mode": "none",
+      "success": false,
+      "virtual_time_s": 2978.06985,
+      "distance_m": 11370.34926129371,
+      "n_measure": 110,
+      "resolved": 14,
+      "error": null,
+      "finish_reason": null,
+      "decision_summary": {
+        "n_decisions": 20,
+        "n_candidates": 321,
+        "selected": 20,
+        "rl_changed_actions": 0,
+        "soft_information_selected": 0,
+        "bundle_selected": 0,
+        "by_candidate_type": {
+          "CLEAR": {
+            "selected": 9,
+            "realized": 9,
+            "mean_time_s": 85.7788014444445,
+            "mean_distance_m": 403.8940073401807,
+            "mean_belief_reduction": 0.0,
+            "mean_certificate_gain": 1.0
+          },
+          "EXPLORE": {
+            "selected": 1,
+            "realized": 1,
+            "mean_time_s": 119.0,
+            "mean_distance_m": 0.0,
+            "mean_certificate_gain": 6.0
+          },
+          "REFINE": {
+            "selected": 10,
+            "realized": 10,
+            "mean_time_s": 208.70606369999996,
+            "mean_distance_m": 773.5303195232084,
+            "mean_belief_reduction": 43123.216794790154,
+            "mean_certificate_gain": 3.1
+          }
+        }
+      }
+    },
+    {
+      "seed": 1000,
+      "mode": "dbscan",
+      "success": false,
+      "virtual_time_s": 2902.367825,
+      "distance_m": 10426.839133359184,
+      "n_measure": 130,
+      "resolved": 13,
+      "error": null,
+      "finish_reason": null,
+      "decision_summary": {
+        "n_decisions": 20,
+        "n_candidates": 342,
+        "selected": 20,
+        "rl_changed_actions": 0,
+        "soft_information_selected": 0,
+        "bundle_selected": 2,
+        "by_candidate_type": {
+          "CLEAR": {
+            "selected": 6,
+            "realized": 6,
+            "mean_time_s": 66.20786716666659,
+            "mean_distance_m": 306.03933590663746,
+            "mean_belief_reduction": 0.0,
+            "mean_certificate_gain": 1.0
+          },
+          "EXPLORE": {
+            "selected": 2,
+            "realized": 2,
+            "mean_time_s": 177.47927800000002,
+            "mean_distance_m": 607.3963900230606,
+            "mean_belief_reduction": 45299.12686540661,
+            "mean_certificate_gain": 3.5
+          },
+          "REFINE": {
+            "selected": 10,
+            "realized": 10,
+            "mean_time_s": 171.96207750000002,
+            "mean_distance_m": 641.3103882751413,
+            "mean_belief_reduction": 18420.065680308122,
+            "mean_certificate_gain": 1.3
+          },
+          "STOP": {
+            "selected": 2,
+            "realized": 2,
+            "mean_time_s": 215.2706455,
+            "mean_distance_m": 481.3532275609129,
+            "mean_belief_reduction": 114578.65078923653,
+            "mean_certificate_gain": 7.0
+          }
+        }
+      }
+    },
+    {
+      "seed": 1001,
+      "mode": "none",
+      "success": false,
+      "virtual_time_s": 2931.466409,
+      "distance_m": 10927.33205094559,
+      "n_measure": 118,
+      "resolved": 9,
+      "error": null,
+      "finish_reason": null,
+      "decision_summary": {
+        "n_decisions": 20,
+        "n_candidates": 325,
+        "selected": 20,
+        "rl_changed_actions": 0,
+        "soft_information_selected": 0,
+        "bundle_selected": 0,
+        "by_candidate_type": {
+          "CLEAR": {
+            "selected": 9,
+            "realized": 9,
+            "mean_time_s": 95.72540666666663,
+            "mean_distance_m": 453.6270336878416,
+            "mean_belief_reduction": 0.0,
+            "mean_certificate_gain": 1.0
+          },
+          "EXPLORE": {
+            "selected": 1,
+            "realized": 1,
+            "mean_time_s": 119.0,
+            "mean_distance_m": 0.0,
+            "mean_certificate_gain": 7.0
+          },
+          "REFINE": {
+            "selected": 10,
+            "realized": 10,
+            "mean_time_s": 195.09377490000003,
+            "mean_distance_m": 684.4688747755015,
+            "mean_belief_reduction": 39059.908192123796,
+            "mean_certificate_gain": 2.6
+          }
+        }
+      }
+    },
+    {
+      "seed": 1001,
+      "mode": "dbscan",
+      "success": false,
+      "virtual_time_s": 2613.640422,
+      "distance_m": 9308.20210721972,
+      "n_measure": 122,
+      "resolved": 6,
+      "error": null,
+      "finish_reason": null,
+      "decision_summary": {
+        "n_decisions": 20,
+        "n_candidates": 329,
+        "selected": 20,
+        "rl_changed_actions": 0,
+        "soft_information_selected": 0,
+        "bundle_selected": 3,
+        "by_candidate_type": {
+          "CLEAR": {
+            "selected": 6,
+            "realized": 6,
+            "mean_time_s": 72.31355649999996,
+            "mean_distance_m": 336.5677819635151,
+            "mean_belief_reduction": 0.0,
+            "mean_certificate_gain": 1.0
+          },
+          "REFINE": {
+            "selected": 11,
+            "realized": 11,
+            "mean_time_s": 142.01281481818185,
+            "mean_distance_m": 525.0640741537856,
+            "mean_belief_reduction": 17857.782261053133,
+            "mean_certificate_gain": 1.2727272727272727
+          },
+          "STOP": {
+            "selected": 3,
+            "realized": 3,
+            "mean_time_s": 205.87270666666666,
+            "mean_distance_m": 504.3635332489962,
+            "mean_belief_reduction": 39144.272131463666,
+            "mean_certificate_gain": 4.0
+          }
+        }
+      }
+    },
+    {
+      "seed": 1002,
+      "mode": "none",
+      "success": false,
+      "virtual_time_s": 3007.55959,
+      "distance_m": 11632.797957005067,
+      "n_measure": 105,
+      "resolved": 12,
+      "error": null,
+      "finish_reason": null,
+      "decision_summary": {
+        "n_decisions": 20,
+        "n_candidates": 331,
+        "selected": 20,
+        "rl_changed_actions": 0,
+        "soft_information_selected": 0,
+        "bundle_selected": 0,
+        "by_candidate_type": {
+          "CLEAR": {
+            "selected": 11,
+            "realized": 11,
+            "mean_time_s": 136.3973283636364,
+            "mean_distance_m": 656.9866423349946,
+            "mean_belief_reduction": 0.0,
+            "mean_certificate_gain": 1.0
+          },
+          "EXPLORE": {
+            "selected": 1,
+            "realized": 1,
+            "mean_time_s": 119.0,
+            "mean_distance_m": 0.0,
+            "mean_certificate_gain": 9.0
+          },
+          "REFINE": {
+            "selected": 8,
+            "realized": 8,
+            "mean_time_s": 173.52362224999993,
+            "mean_distance_m": 550.7431114150157,
+            "mean_belief_reduction": 56341.101293410546,
+            "mean_certificate_gain": 3.375
+          }
+        }
+      }
+    },
+    {
+      "seed": 1002,
+      "mode": "dbscan",
+      "success": false,
+      "virtual_time_s": 1656.105954,
+      "distance_m": 4770.529778238265,
+      "n_measure": 114,
+      "resolved": 6,
+      "error": null,
+      "finish_reason": null,
+      "decision_summary": {
+        "n_decisions": 20,
+        "n_candidates": 407,
+        "selected": 20,
+        "rl_changed_actions": 0,
+        "soft_information_selected": 0,
+        "bundle_selected": 3,
+        "by_candidate_type": {
+          "CLEAR": {
+            "selected": 5,
+            "realized": 5,
+            "mean_time_s": 79.005204,
+            "mean_distance_m": 370.02602001946724,
+            "mean_belief_reduction": 0.0,
+            "mean_certificate_gain": 1.0
+          },
+          "REFINE": {
+            "selected": 12,
+            "realized": 12,
+            "mean_time_s": 52.88501975000002,
+            "mean_distance_m": 126.50843262259919,
+            "mean_belief_reduction": 5873.570305352715,
+            "mean_certificate_gain": 0.8333333333333334
+          },
+          "STOP": {
+            "selected": 3,
+            "realized": 3,
+            "mean_time_s": 208.81989899999996,
+            "mean_distance_m": 467.4328288899128,
+            "mean_belief_reduction": 163967.16573991306,
+            "mean_certificate_gain": 7.0
+          }
+        }
+      }
+    }
+  ],
+  "full_clear_rate": {
+    "none": 0.0,
+    "dbscan": 0.0
+  }
+}

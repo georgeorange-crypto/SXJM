@@ -1,0 +1,114 @@
+{
+  "problem": 4,
+  "hard": false,
+  "split": null,
+  "field_kind": "smooth",
+  "seeds": [
+    2000
+  ],
+  "batch_stop": true,
+  "rows": [
+    {
+      "full_clear": true,
+      "T_total_s": 13860.638276,
+      "T_per_source_s": 1066.2029443076922,
+      "T_lower_bound_s": 1797.5165451900234,
+      "rho_T_over_LB": 7.710993433184077,
+      "certified_gap": 6.710993433184077,
+      "L_total_m": 55518.191371781264,
+      "L_over_L_ref": null,
+      "N_measure": 466,
+      "N_empty_scan": 404,
+      "N_longjump": 13,
+      "N_crossing": 43,
+      "T_move_s": 11103.63827435625,
+      "T_measure_s": 2330.0000016174126,
+      "T_switch_s": 362.0,
+      "T_clear_s": 65.00000002633551,
+      "T_other_s": 1.8189894035458565e-12,
+      "T_accounting_error_s": 0.0,
+      "L_equivalent_m": 69498.19137178126,
+      "planner_version": "way4-route-math-v1",
+      "metric_schema_version": "way4-metrics-v2",
+      "L_clear_m": 3267.0018448683213,
+      "longest_waiting_sources": [
+        {
+          "first_detect_s": 101.0,
+          "localized_s": 2612.16587,
+          "cleared_s": 2631.177133,
+          "detect_to_clear_s": 2530.177133,
+          "status": "CLEARED",
+          "channel": 17
+        },
+        {
+          "first_detect_s": 89.0,
+          "localized_s": 2162.372904,
+          "cleared_s": 2208.575057,
+          "detect_to_clear_s": 2119.575057,
+          "status": "CLEARED",
+          "channel": 15
+        },
+        {
+          "first_detect_s": 53.0,
+          "localized_s": 1809.456338,
+          "cleared_s": 1833.634999,
+          "detect_to_clear_s": 1780.634999,
+          "status": "CLEARED",
+          "channel": 9
+        },
+        {
+          "first_detect_s": 2703.297835,
+          "localized_s": 3883.358009,
+          "cleared_s": 4028.941379,
+          "detect_to_clear_s": 1325.643544,
+          "status": "CLEARED",
+          "channel": 4
+        },
+        {
+          "first_detect_s": 353.501238,
+          "localized_s": 1598.87456,
+          "cleared_s": 1649.342279,
+          "detect_to_clear_s": 1295.841041,
+          "status": "CLEARED",
+          "channel": 2
+        }
+      ],
+      "seed": 2000,
+      "source_count": 13,
+      "truth_cleared": 13,
+      "truth_total": 13,
+      "time_s": 13860.638276,
+      "error": null,
+      "steps": 100,
+      "move_distance_m": 55518.191371781264,
+      "n_measure": 466,
+      "n_switch": 362,
+      "n_clear": 13,
+      "n_clear_hit": 13,
+      "time_move_s": 11103.63827435625,
+      "time_measure_s": 2330.0000016174126,
+      "time_switch_s": 362.0,
+      "time_clear_s": 65.00000002633551,
+      "route_n_stops": 83,
+      "revisit_distance": 1753.929495297009,
+      "certificate_only_travel": 43997.46126995522,
+      "seconds_per_target": 1066.2029443076922
+    }
+  ],
+  "completed_seeds": [
+    2000
+  ],
+  "status": "complete",
+  "full_clear_rate": 1.0,
+  "full_clear_time_s": {
+    "n": 1,
+    "mean": 13860.638276,
+    "median": 13860.638276,
+    "p90": 13860.638276,
+    "p95": 13860.638276,
+    "max": 13860.638276
+  },
+  "target_s_per_target": 400.0,
+  "target_pass_full_clear_rows": false,
+  "target_required": false
+}

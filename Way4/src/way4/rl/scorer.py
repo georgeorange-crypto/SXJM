@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Sequence
 
-from .features import FEATURE_DIM
+from .features import FEATURE_DIM, FEATURE_SCHEMA_HASH, FEATURE_SCHEMA_VERSION
 
 try:  # torch is optional; absence must not break import or the math pipeline.
     import torch
@@ -141,6 +141,7 @@ class ResidualScorer:
 
     def load_state_dict(self, sd) -> None:
         if self.available:
+            sd = dict(sd)
             bias = sd.pop("__action_bias__", None)
             self.net.load_state_dict(sd)
             if bias is not None: self.action_bias.data.copy_(bias)
@@ -152,6 +153,8 @@ class ResidualScorer:
         torch.save(
             {
                 "in_dim": self.in_dim,
+                "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                "feature_schema_hash": FEATURE_SCHEMA_HASH,
                 "hidden": list(self.hidden),
                 "residual_clip": self.residual_clip,
                 "state_dict": self.state_dict(),
@@ -164,6 +167,8 @@ class ResidualScorer:
         if not _TORCH_OK:
             raise RuntimeError("torch unavailable; cannot load ResidualScorer")
         blob = torch.load(path, map_location="cpu")
+        if blob.get("feature_schema_version") != FEATURE_SCHEMA_VERSION or blob.get("feature_schema_hash") != FEATURE_SCHEMA_HASH:
+            raise ValueError("incompatible ResidualScorer feature schema; retraining is required")
         scorer = cls(
             hidden=blob.get("hidden", (64, 64)),
             zero_init=False,

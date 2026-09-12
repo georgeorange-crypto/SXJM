@@ -1,0 +1,78 @@
+{
+  "problem": 4,
+  "seeds": [
+    2053,
+    2054,
+    2055,
+    2056,
+    2057,
+    2058,
+    2059
+  ],
+  "rows": [
+    {
+      "seed": 2053,
+      "full_clear": true,
+      "truth_cleared": 12,
+      "truth_total": 12,
+      "time_s": 16717.860403,
+      "error": null,
+      "steps": 75
+    },
+    {
+      "seed": 2054,
+      "full_clear": true,
+      "truth_cleared": 11,
+      "truth_total": 11,
+      "time_s": 13486.516572,
+      "error": null,
+      "steps": 79
+    },
+    {
+      "seed": 2055,
+      "full_clear": true,
+      "truth_cleared": 11,
+      "truth_total": 11,
+      "time_s": 16919.275548,
+      "error": null,
+      "steps": 120
+    },
+    {
+      "seed": 2056,
+      "full_clear": true,
+      "truth_cleared": 14,
+      "truth_total": 14,
+      "time_s": 17996.852058,
+      "error": null,
+      "steps": 89
+    },
+    {
+      "seed": 2057,
+      "full_clear": true,
+      "truth_cleared": 15,
+      "truth_total": 15,
+      "time_s": 18361.153379,
+      "error": null,
+      "steps": 148
+    },
+    {
+      "seed": 2058,
+      "full_clear": true,
+      "truth_cleared": 11,
+      "truth_total": 11,
+      "time_s": 17231.683582,
+      "error": null,
+      "steps": 101
+    },
+    {
+      "seed": 2059,
+      "full_clear": true,
+      "truth_cleared": 13,
+      "truth_total": 13,
+      "time_s": 17751.041885,
+      "error": null,
+      "steps": 133
+    }
+  ],
+  "full_clear_rate": 1.0
+}

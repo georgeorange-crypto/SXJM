@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+MODEL_SCHEMA = "way4-relational-candidate-ppo-v2"
+
 try:
     import torch
     from torch import nn
@@ -18,6 +20,13 @@ except Exception:  # pragma: no cover
     torch = None
     nn = None
     _TORCH = False
+
+# Keep package imports usable on CPU-only/partial Torch installations.  The
+# deterministic Way4 math stack must remain importable even when optional PPO
+# dependencies cannot load (for example a missing CUDA DLL).
+if not _TORCH:  # pragma: no cover
+    EdgeAwareCandidateGNN = None
+    CandidateActorCritic = None
 
 
 @dataclass(frozen=True)
@@ -70,8 +79,55 @@ class SpatialCandidate:
 
 
 if _TORCH:
+    class EdgeAwareCandidateGNN(nn.Module):
+        """Permutation-equivariant message passing over SpatialStop nodes.
+
+        Nodes are candidate stops; edges carry relative geometry and route
+        context.  The graph is rebuilt at every rolling decision, so the
+        learned policy sees the current remaining-task geometry.
+        """
+        def __init__(self, hidden: int, steps: int = 2):
+            super().__init__()
+            self.steps = int(steps)
+            self.edge = nn.Sequential(nn.Linear(6, hidden), nn.GELU(),
+                                      nn.Linear(hidden, hidden))
+            self.update = nn.ModuleList([
+                nn.Sequential(nn.Linear(2 * hidden, hidden), nn.GELU(),
+                              nn.LayerNorm(hidden)) for _ in range(self.steps)
+            ])
+
+        def forward(self, node, raw, mask=None):
+            xy = raw[..., :2]
+            delta = xy[:, :, None, :] - xy[:, None, :, :]
+            dist = torch.sqrt((delta * delta).sum(-1, keepdim=True) + 1e-8)
+            travel = raw[..., 3:4]
+            route = raw[..., 5:6]
+            edge_raw = torch.cat((delta, dist,
+                                  travel[:, :, None, :] - travel[:, None, :, :],
+                                  route[:, :, None, :] - route[:, None, :, :],
+                                  dist), dim=-1)
+            edge = self.edge(edge_raw)
+            n = raw.shape[1]
+            eye = torch.eye(n, device=raw.device, dtype=torch.bool)[None, :, :, None]
+            edge = edge.masked_fill(eye, 0.0)
+            denom = max(n - 1, 1)
+            if mask is not None:
+                edge = edge.masked_fill(~mask[:, None, :, None], 0.0)
+                denom = (mask.sum(1) - 1).clamp_min(1)[:, None, None]
+            for layer in self.update:
+                msg = edge.sum(2) / denom
+                node = node + layer(torch.cat((node, msg), dim=-1))
+            return node
+
     class CandidateActorCritic(nn.Module):
-        """Channel transformer + candidate/channel attention actor-critic."""
+        """Relational candidate-set PPO actor-critic.
+
+        The channel encoder models the 20-channel belief, while the candidate
+        encoder models interactions *between* SpatialStop candidates.  This is
+        intentionally permutation equivariant: candidate order is not a
+        semantic feature.  PPO still only selects an index from the safe
+        candidates supplied by the deterministic planner.
+        """
         def __init__(self, candidate_dim: int, channel_dim: int = 10,
                      hidden: int = 128, heads: int = 4, layers: int = 2):
             super().__init__()
@@ -83,19 +139,39 @@ if _TORCH:
             enc = nn.TransformerEncoderLayer(hidden, h, 2*hidden, batch_first=True,
                                              activation="gelu", norm_first=True)
             self.channel_encoder = nn.TransformerEncoder(enc, layers)
+            cand_enc = nn.TransformerEncoderLayer(hidden, h, 2*hidden, batch_first=True,
+                                                  activation="gelu", norm_first=True)
+            self.candidate_encoder = nn.TransformerEncoder(cand_enc, layers)
+            self.candidate_graph = EdgeAwareCandidateGNN(hidden, steps=layers)
             self.cross = nn.MultiheadAttention(hidden, h, batch_first=True)
             self.actor = nn.Sequential(nn.LayerNorm(hidden), nn.Linear(hidden, 1))
             self.critic = nn.Sequential(nn.LayerNorm(hidden), nn.Linear(hidden, 1))
 
-        def forward(self, x):
+        def forward(self, x, mask=None):
             # x: [B, A, 10 + C*10], first 10 are spatial/route features.
             b, a, _ = x.shape
+            if mask is not None:
+                mask = torch.as_tensor(mask, device=x.device, dtype=torch.bool)
+                if mask.shape != (b, a) or not mask.any(1).all():
+                    raise ValueError('each decision requires at least one valid candidate')
+                x = x.masked_fill(~mask[..., None], 0.0)
+            cand_raw = x[:, :, :10]
+            q0 = self.cand(cand_raw)
+            cand_tokens = self.candidate_graph(q0, cand_raw, mask)
+            cand_tokens = self.candidate_encoder(
+                cand_tokens, src_key_padding_mask=None if mask is None else ~mask)
+
             channels = x[:, :, 10:].reshape(b*a, -1, self.channel_dim)
             ch = self.channel_encoder(self.chan(channels))
-            q = self.cand(x[:, :, :10]).reshape(b*a, 1, self.hidden)
+            q = cand_tokens.reshape(b*a, 1, self.hidden)
             fused, _ = self.cross(q, ch, ch)
             z = fused[:, 0].reshape(b, a, self.hidden)
-            return self.actor(z).squeeze(-1), self.critic(z.mean(1)).squeeze(-1)
+            logits = self.actor(z).squeeze(-1)
+            pooled = z.mean(1) if mask is None else (
+                z.masked_fill(~mask[..., None], 0.0).sum(1) / mask.sum(1)[:, None])
+            if mask is not None:
+                logits = logits.masked_fill(~mask, -1e9)
+            return logits, self.critic(pooled).squeeze(-1)
 
 
 @dataclass
@@ -108,6 +184,7 @@ class PPOConfig:
     entropy_coef: float = .01
     value_coef: float = .5
     max_grad_norm: float = .5
+    minibatch_size: int = 128
 
 
 def compute_gae(rewards: Sequence[float], values: Sequence[float], cfg=PPOConfig()):
@@ -127,28 +204,38 @@ if _TORCH:
             self.optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
 
         def update(self, observations, actions, old_log_probs, returns, advantages, mask=None):
-            x = torch.as_tensor(observations, dtype=torch.float32)
-            a = torch.as_tensor(actions, dtype=torch.long)
-            old = torch.as_tensor(old_log_probs, dtype=torch.float32)
-            ret = torch.as_tensor(returns, dtype=torch.float32)
-            adv = torch.as_tensor(advantages, dtype=torch.float32)
+            if not len(actions) or self.cfg.minibatch_size < 1 or self.cfg.epochs < 1:
+                raise ValueError('PPO requires nonempty data, positive minibatch size and epochs')
+            device = next(self.model.parameters()).device
+            x = torch.as_tensor(observations, dtype=torch.float32, device=device)
+            a = torch.as_tensor(actions, dtype=torch.long, device=device)
+            old = torch.as_tensor(old_log_probs, dtype=torch.float32, device=device)
+            ret = torch.as_tensor(returns, dtype=torch.float32, device=device)
+            adv = torch.as_tensor(advantages, dtype=torch.float32, device=device)
+            masks = None if mask is None else torch.as_tensor(mask, dtype=torch.bool, device=device)
             if len(adv) > 1: adv = (adv-adv.mean())/(adv.std()+1e-8)
             losses = []
             for _ in range(self.cfg.epochs):
-                logits, value = self.model(x)
-                if mask is not None:
-                    logits = logits.masked_fill(~torch.as_tensor(mask, dtype=torch.bool), -1e9)
-                logp = torch.log_softmax(logits, -1).gather(1, a[:, None]).squeeze(1)
-                ratio = torch.exp(logp-old)
-                clipped = torch.clamp(ratio, 1-self.cfg.clip_eps, 1+self.cfg.clip_eps)
-                policy = -torch.minimum(ratio*adv, clipped*adv).mean()
-                value_loss = (value-ret).pow(2).mean()
-                entropy = -(torch.softmax(logits,-1)*torch.log_softmax(logits,-1)).sum(-1).mean()
-                loss = policy + self.cfg.value_coef*value_loss - self.cfg.entropy_coef*entropy
-                self.optimizer.zero_grad(); loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.max_grad_norm)
-                self.optimizer.step(); losses.append(float(loss.detach()))
-            return {"loss": sum(losses)/len(losses), "n": len(actions)}
+                permutation = torch.randperm(len(a), device=device)
+                for ids in permutation.split(self.cfg.minibatch_size):
+                    if isinstance(self.model, CandidateActorCritic):
+                        logits, value = self.model(x[ids], None if masks is None else masks[ids])
+                    else:
+                        logits, value = self.model(x[ids])
+                    if masks is not None:
+                        logits = logits.masked_fill(~masks[ids], -1e9)
+                    logp = torch.log_softmax(logits, -1).gather(1, a[ids, None]).squeeze(1)
+                    ratio = torch.exp(logp-old[ids])
+                    clipped = torch.clamp(ratio, 1-self.cfg.clip_eps, 1+self.cfg.clip_eps)
+                    policy = -torch.minimum(ratio*adv[ids], clipped*adv[ids]).mean()
+                    value_loss = (value-ret[ids]).pow(2).mean()
+                    entropy = -(torch.softmax(logits,-1)*torch.log_softmax(logits,-1)).sum(-1).mean()
+                    loss = policy + self.cfg.value_coef*value_loss - self.cfg.entropy_coef*entropy
+                    self.optimizer.zero_grad(); loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.max_grad_norm)
+                    self.optimizer.step(); losses.append(float(loss.detach()))
+            return {"loss": sum(losses)/len(losses), "n": len(actions),
+                    "optimizer_steps": len(losses)}
 else:  # keep the math-only installation importable
     CandidateActorCritic = None
     CandidatePPOTrainer = None

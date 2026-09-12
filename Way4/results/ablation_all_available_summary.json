@@ -1,0 +1,135 @@
+{
+  "expected_cells": [
+    "adaptive_rerank",
+    "adaptive_rerank_stop",
+    "coverage_backbone_only",
+    "minus_cardinality",
+    "minus_no_signal",
+    "nbv_greedy",
+    "routing_nearest",
+    "way4_full"
+  ],
+  "cells": [
+    {
+      "name": "way4_full",
+      "status": "complete",
+      "n_rows": 3,
+      "n_valid": 3,
+      "n_success": 3,
+      "full_clear_rate": 1.0,
+      "time_mean": 15415.959195000001,
+      "time_p90": 15952.7219138,
+      "errors": []
+    },
+    {
+      "name": "minus_no_signal",
+      "status": "failed",
+      "n_rows": 1,
+      "n_valid": 0,
+      "n_success": 0,
+      "full_clear_rate": null,
+      "time_mean": null,
+      "time_p90": null,
+      "errors": [
+        "no_progress_stall"
+      ]
+    },
+    {
+      "name": "minus_cardinality",
+      "status": "complete",
+      "n_rows": 1,
+      "n_valid": 1,
+      "n_success": 1,
+      "full_clear_rate": 1.0,
+      "time_mean": 15358.975213,
+      "time_p90": 15358.975213,
+      "errors": []
+    },
+    {
+      "name": "adaptive_rerank",
+      "status": "complete",
+      "n_rows": 3,
+      "n_valid": 3,
+      "n_success": 3,
+      "full_clear_rate": 1.0,
+      "time_mean": 16116.847184666667,
+      "time_p90": 17081.317452400002,
+      "errors": []
+    },
+    {
+      "name": "adaptive_rerank_stop",
+      "status": "complete",
+      "n_rows": 3,
+      "n_valid": 3,
+      "n_success": 3,
+      "full_clear_rate": 1.0,
+      "time_mean": 16116.847184666667,
+      "time_p90": 17081.317452400002,
+      "errors": []
+    },
+    {
+      "name": "nbv_greedy",
+      "status": "complete",
+      "n_rows": 1,
+      "n_valid": 1,
+      "n_success": 1,
+      "full_clear_rate": 1.0,
+      "time_mean": 15574.678844,
+      "time_p90": 15574.678844,
+      "errors": []
+    },
+    {
+      "name": "coverage_backbone_only",
+      "status": "complete",
+      "n_rows": 1,
+      "n_valid": 1,
+      "n_success": 1,
+      "full_clear_rate": 1.0,
+      "time_mean": 15128.827671,
+      "time_p90": 15128.827671,
+      "errors": []
+    },
+    {
+      "name": "routing_nearest",
+      "status": "complete",
+      "n_rows": 1,
+      "n_valid": 1,
+      "n_success": 1,
+      "full_clear_rate": 1.0,
+      "time_mean": 17674.910419,
+      "time_p90": 17674.910419,
+      "errors": []
+    }
+  ],
+  "complete": false,
+  "source": [
+    "results\\ablation_supported_2000_2002.json",
+    "results\\ablation_adaptive_rerank_2001.json",
+    "results\\ablation_adaptive_rerank_2002.json",
+    "results\\ablation_adaptive_rerank_stop_2000.json",
+    "results\\ablation_adaptive_rerank_stop_2001.json",
+    "results\\ablation_adaptive_rerank_stop_2002.json",
+    "results\\ablation_routing_nearest_2000.json",
+    "results\\ablation_nbv_greedy_2000.json",
+    "results\\ablation_coverage_backbone_only_2000.json",
+    "results\\ablation_minus_no_signal_2000.json",
+    "results\\ablation_minus_cardinality_2000.json"
+  ],
+  "problem": 4,
+  "seeds": [
+    2000,
+    2001,
+    2002
+  ],
+  "selected_cells": [
+    "adaptive_rerank",
+    "adaptive_rerank_stop",
+    "coverage_backbone_only",
+    "minus_cardinality",
+    "minus_no_signal",
+    "nbv_greedy",
+    "routing_nearest",
+    "way4_full"
+  ],
+  "runner_complete": false
+}

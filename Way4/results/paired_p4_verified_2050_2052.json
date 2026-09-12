@@ -1,0 +1,79 @@
+{
+  "math": [
+    {
+      "seed": 2050,
+      "full_clear": true,
+      "time_s": 14476.538855,
+      "move_m": 54677.69426944893,
+      "measure": 591,
+      "switch": 516,
+      "clear": 14,
+      "error": null
+    },
+    {
+      "seed": 2051,
+      "full_clear": true,
+      "time_s": 14505.145119,
+      "move_m": 51210.72558762003,
+      "measure": 719,
+      "switch": 613,
+      "clear": 11,
+      "error": null
+    },
+    {
+      "seed": 2052,
+      "full_clear": true,
+      "time_s": 14477.032734,
+      "move_m": 60455.16365415289,
+      "measure": 396,
+      "switch": 331,
+      "clear": 15,
+      "error": null
+    }
+  ],
+  "ppo": [
+    {
+      "seed": 2050,
+      "full_clear": true,
+      "time_s": 14133.659785,
+      "move_m": 50403.298937791566,
+      "measure": 679,
+      "switch": 588,
+      "clear": 14,
+      "error": null
+    },
+    {
+      "seed": 2051,
+      "full_clear": true,
+      "time_s": 15621.800538,
+      "move_m": 58869.00269270698,
+      "measure": 651,
+      "switch": 538,
+      "clear": 11,
+      "error": null
+    },
+    {
+      "seed": 2052,
+      "full_clear": true,
+      "time_s": 14153.558617,
+      "move_m": 58432.7930874114,
+      "measure": 410,
+      "switch": 342,
+      "clear": 15,
+      "error": null
+    }
+  ],
+  "paired": {
+    "n": 3,
+    "win_rate": 0.6666666666666666,
+    "regressions_over_100s": 1,
+    "regressions_over_300s": 1,
+    "worst_regression": -1116.6554189999988
+  },
+  "complete": true,
+  "seeds": [
+    2050,
+    2051,
+    2052
+  ]
+}

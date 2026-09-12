@@ -1,0 +1,37 @@
+{
+  "math": [
+    {
+      "seed": 2050,
+      "full_clear": true,
+      "time_s": 14476.538855,
+      "move_m": 43372.76104780242,
+      "measure": 578,
+      "switch": 511,
+      "clear": 9,
+      "error": null
+    }
+  ],
+  "ppo": [
+    {
+      "seed": 2050,
+      "full_clear": true,
+      "time_s": 16149.681412,
+      "move_m": 65491.39348432914,
+      "measure": 436,
+      "switch": 371,
+      "clear": 12,
+      "error": null
+    }
+  ],
+  "paired": {
+    "n": 1,
+    "win_rate": 0.0,
+    "regressions_over_100s": 1,
+    "regressions_over_300s": 1,
+    "worst_regression": -1673.1425569999992
+  },
+  "complete": true,
+  "seeds": [
+    2050
+  ]
+}

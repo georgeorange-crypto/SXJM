@@ -34,6 +34,7 @@ the reasoning stays stdlib-simple.
 from __future__ import annotations
 
 from typing import Dict, Optional, Tuple
+from math import log
 
 import numpy as np
 
@@ -334,6 +335,31 @@ class ChannelHypotheses:
         never a proof of the complement (Invariant B)."""
         return self.omni_alive | self.dir_alive.any(axis=1)
 
+    def posterior_entropy(self) -> float:
+        """Entropy of the conservative uniform soft posterior over alive states.
+
+        This is deliberately a planning posterior, not a certificate: every
+        alive hypothesis receives mass and every eliminated hypothesis receives
+        zero mass.  Thus ``support(p)`` remains a subset of the hard hypothesis
+        set, and no probability estimate can remove a mathematically possible
+        source.
+        """
+        n = self.n_alive
+        return 0.0 if n <= 1 else float(log(n))
+
+    def posterior_mass(self) -> np.ndarray:
+        """Normalised per-cell mass, marginalising omni and directional states."""
+        mass = self.omni_alive.astype(float) + self.dir_alive.sum(axis=1).astype(float)
+        z = float(mass.sum())
+        return mass / z if z > 0 else mass
+
+    def information_gain(self, S: Point) -> float:
+        """Entropy reduction proxy for a guaranteed NO_SIGNAL observation at S."""
+        before = self.posterior_entropy()
+        killed = self.elimination_gain(S)
+        remaining = max(1, int(round(self.n_alive * (1.0 - killed))))
+        return max(0.0, before - (0.0 if remaining <= 1 else log(remaining)))
+
 
 class HypothesisLayer:
     """Per-channel :class:`ChannelHypotheses` over one shared grid (DESIGN.md
@@ -369,6 +395,14 @@ class HypothesisLayer:
             w = 1.0 if weights is None else float(weights.get(c, 1.0))
             total += w * self.elimination_gain(c, point)
         return total
+
+    def information_gain(self, c: int, point: Point) -> float:
+        h = self.channels.get(c)
+        return 0.0 if h is None else h.information_gain(point)
+
+    def batch_information_gain(self, channels, point: Point, weights=None) -> float:
+        return sum((1.0 if weights is None else float(weights.get(c, 1.0))) *
+                   self.information_gain(c, point) for c in channels)
 
 
 # --- small vectorised angle helpers (deg, matching sxjm_core convention) ------

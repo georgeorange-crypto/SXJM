@@ -1,0 +1,26 @@
+{
+  "problem": 4,
+  "seeds": [
+    2000
+  ],
+  "results": {
+    "minus_cardinality": [
+      {
+        "seed": 2000,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 15358.975213,
+        "error": null,
+        "steps": 88
+      }
+    ]
+  },
+  "selected_cells": [
+    "minus_cardinality"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": true
+}

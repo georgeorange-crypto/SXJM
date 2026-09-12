@@ -23,6 +23,69 @@
   `WAITING_FOR_ROUTE` bookkeeping, starvation promotion, pipeline synchronization,
   and candidate diagnostic metadata. Targeted evidence: `8 passed, 4 skipped in
   5.59s`; compileall passed. Automatic route-opportunity assignment remains open.
+- Fourth pass added `assign_route_opportunities()`: future open-route waypoints
+  are filtered by a sensing-feasibility callback and ranked by insertion delta;
+  delay safety and starvation promotion remain enforced. Evidence:
+- Fifth pass added `ViewpointOpportunity` and `MinimaxNBV.propose()`, then wired
+  up to four validated alternatives per REFINE channel into
+  `generate_spatial_candidates()` while preserving the minimax candidate.
+  Evidence: viewpoint/NBV/spatial candidate regression `10 passed`.
+- Sixth pass wired `RemainingTaskPool.assign_route_opportunities()` into the
+  pipeline decision path and changed SpatialStop representatives to a
+  route-aware nearest cluster member, with `bundle_internal_travel` diagnostics.
+  Evidence: pipeline assignment `6 passed, 2 skipped`; SpatialStop `8 passed`.
+  `test_task_pool.py` 4 passed. End-to-end route generation still does not invoke
+  this assignment automatically.
+- Seventh pass enabled strict two-objective Pareto pruning in spatial planner
+  ranking; protected CLEAR/VERIFY/EXIT candidates are retained and legacy mode is
+  unchanged. Evidence: `test_pareto_planner.py` plus planner-mode regression
+  `7 passed, 2 skipped`.
+- Eighth pass added explicit `FutureCost.j_additive`, `j_joint`, and
+  `route_synergy` diagnostics. Joint estimates report the actual additive-vs-joint
+  comparison and preserve the subadditive cap. Evidence: FutureCost regression
+  `13 passed`.
+- Ninth pass exposed route synergy and multi-service features on
+  `MacroCandidate`/RL vectors: synergy, measure/clear service counts, and service
+  density. Evidence: `test_service_features.py` passed after correcting and
+  rerunning its assertion location.
+- Tenth pass connected `UnifiedRoutePlanner` to pipeline decision making via
+  `ServiceOpportunity`, including same-point service coalescing and route
+  diagnostics consumed by WAIT assignment. Evidence: unified-route pipeline and
+  routing regression `11 passed`.
+- Twelfth pass audited Candidate-PPO checkpoint compatibility: legacy artifacts
+  with matching shape can load, while missing-architecture/shape mismatches now
+  fail explicitly. Evidence: `test_candidate_checkpoint_compat.py` 2 passed.
+  The old `candidate_ppo_p4_large.pt` was rejected; no compatible relational-v2
+  checkpoint artifact is currently available, so paired evaluation remains
+  pending retraining.
+- Eleventh pass made route synergy an actual ranking term through
+  `route_synergy_weight`; legacy remains zero-weight while spatial modes enable
+  it. Safety/completion candidates remain protected. Evidence:
+  `test_synergy_ranking.py` passed.
+- Twelfth pass began the relational V4 learning layer: `CandidateActorCritic`
+  now has a permutation-equivariant candidate-set Transformer plus explicit
+  pair geometry/route message features before candidate-to-channel attention.
+  Candidate-context, permutation-equivariance, and route-context tests passed
+  (`3 passed`); old checkpoints are intentionally incompatible until retrained.
+- Thirteenth pass added and integrated `EdgeAwareCandidateGNN`: SpatialStop
+  nodes exchange messages over explicit relative-geometry/travel/route edges
+  before CandidateSet Transformer and channel cross-attention. Relational and
+  legacy PPO unit tests passed (`10 passed`); a new relational checkpoint must
+  be trained before end-to-end `final_ppo` evaluation.
+- Fourteenth pass made learned fallback auditable: `CandidatePPOPlanner` now
+  records `no_candidate`, watchdog, and policy-exception reasons; validation
+  artifacts expose the reason and distinguish full-clear from all-PPO execution.
+  Compile plus relational/PPO/pipeline smoke evidence: `11 passed, 2 skipped`.
+- Fifteenth pass enabled CUDA inference and produced the first compact
+  end-to-end relational `final_ppo` P3 artifact: seed 1000 full-clear 16/16,
+  31 macros, 7157.09 s total, 447.32 s/source, 30 PPO decisions,
+  `ppo_fallback=false`. This is one seed only and is not yet a three-group
+  statistical evaluation.
+- Fourteenth pass made Candidate-PPO checkpoint production interruption-auditable:
+  `train_candidate_ppo.py` atomically persists after every episode with
+  `complete=false` and finalizes with `complete=true`; the persistence contract
+  is covered by `test_training_checkpoint_persistence.py` (`1 passed`). This is
+  an engineering safeguard, not evidence of completed relational training.
 
 审计日期：2026-09-12。判定规则：`[x]` 有代码+测试/运行证据；`[~]` 有部分实现但未闭环或缺验收证据；`[ ]` 未发现实现；`[?]` 因环境/证据不足无法确认。路径均相对于本项目根目录。
 
@@ -86,7 +149,7 @@
 
 | 状态 | ID | 证据与结论 |
 |---|---|---|
-| [x] | P2-001–P2-005 | `rl/features.py` 的默认 `evaluation_features()` 已包含 effective area/diameter、kappa、coverage debt、initialization readiness；feature 维度与回归测试同步锁定。 |
+| [~] | P2-001–P2-005 | `rl/features.py` 的默认 `evaluation_features()` 已包含 effective area/diameter、kappa、coverage debt、initialization readiness；soft hypothesis 的 `visibility_gain`/`directional_entropy` 已进入 spatial candidate interaction，并新增 `test_soft_hypothesis_e2e.py`（1 passed）验证进入候选输入路径；完整 PPO observation/训练 artifact 仍待兼容 checkpoint。 |
 | [~] | P2-006–P2-012 | 新增 `planner/lower_bounds.py`：open-MST search/localization/route lower bounds、服务时间下界、以 `max(travel alternatives)+service` 避免 double counting 的 mission LB，以及严格命名的 `certified_gap`；3 个测试通过。仍缺 coverage assignment/orienteering/TSPN 的 LP relaxation、全任务状态下的证明和 convergence/sample-efficiency 论文级实验，故保持 partial。 |
 
 ## P3 — engineering, tests, evaluation and ablations
@@ -100,8 +163,8 @@
 | [x] | P3-017 | 新增随机 10～16 present cardinality interval/property tests，覆盖 `p,z,u,q_min,q_max` soundness 与不误标 unknown。 |
 | [~] | P3-018/P3-019/P3-020 | 最新完整 Way4 回归 artifact 为 261 passed、12 skipped、0 failed（约 1993s）；scheduler、NBV、TSP/TSPN、STOP、RL schema 与 opportunity primitives 均覆盖；固定 seed 端到端审计覆盖 5 个 problem-3 场景，均 full-clear、20/20 resolved、无 error。one-step objectives 的大样本效果仍缺失。 |
 | [~] | P3-021/P3-022 | 新增并运行 `scripts/way4_seed_audit.py`，生成 `results/way4_seed_audit_1000_1004.json`：5/5 invariants passed、均正常退出；仍不是 stress 全 seed/多 field-kind 汇总，故保持 partial。 |
-| [~] | P3-023/P3-024/P3-025/P3-026 | `way4_p4_gate_2000_2009.json` 固定 10 seeds 全部 full-clear；已有 Math vs Candidate-PPO paired smoke `runs/paired_p4_smoke.json`（2/2 两侧 full-clear，PPO win-rate 0.5，1 regression，worst regression -4238.41s），说明 evaluator 能发现性能回退。尝试 test split 2050–2059 时长时间无结果并已中止，故仍缺 V4 paired fair comparison/大样本稳定性，保持 partial。 |
-| [~] | P3-027–P3-033 | `scripts/run_deterministic_ablations.py` 已真实执行并生成 `results/ablation_matrix_real_2000.json`；Way3 adapter 已修复缺失 `Engine.virtual_time_s` fallback，另保存 `results/ablation_fixed_supported_2000.json`（way4_full/adaptive_rerank 均 success、full-clear、20/20 resolved、无 error），并有 artifact test。其余 5 格仍为 `unsupported_configuration`，真实全 seed cell 与最终跨场景报告仍未完成。 |
+| [~] | P3-023/P3-024/P3-025/P3-026 | `way4_p4_gate_2000_2009.json` 固定 10 seeds 全部 full-clear；test split 2050–2059 已闭环：`results/p4_test_gate_2053_2059.json` 覆盖 2053–2059，7/7 full-clear、0 error，结合 2050–2052 为 10/10。已有 Math vs Candidate-PPO paired smoke `runs/paired_p4_smoke.json`（2/2 两侧 full-clear）；`scripts/paired_p4_eval.py` 已改为每个 seed/mode 原子增量落盘，并新增 `scripts/validate_candidate_checkpoint.py` 前置校验。当前所有旧 Candidate-PPO checkpoint 均与 relational v2 架构不兼容（schema 缺失且 strict state_dict 缺少 Transformer/GNN 参数），full 10-seed same-seed paired 尚未启动成功，V4 fair comparison 仍未完成，保持 partial。 |
+| [~] | P3-027–P3-033 | `scripts/run_deterministic_ablations.py` 支持按 cell 选择并逐 seed 增量落盘；`scripts/summarize_ablation_matrix.py` 已生成 `results/ablation_full_2000_2002_merged.json`。除 `minus_no_signal`（真实 `failed`：7/20 resolved、`no_progress_stall`）外，其余 7 个 deterministic cells 均完成 seeds 2000–2002 的真实结果，且 3/3 success/full-clear/20/20 resolved；汇总报告保留均值、P90、错误明细。完整跨场景统计与最终报告仍未完成。状态与汇总器测试 5 passed。 |
 | [x] | P3-034 | `way4.ALGORITHM_NAME`、`LEARNER_ROLE` 与 `DESIGN.md` 已冻结最终算法命名；仍需在最终实验报告/论文产物中沿用该名称。 |
 
 ## 当前 P0 Gate
@@ -111,7 +174,7 @@
 | GATE-01 | [~] | NO_SIGNAL 已进入 `contains_possible_source`/effective area/diameter/hypothesis sampling，并接入 NBV；尚未让所有定位/geometry consumer 统一只通过该接口。 |
 | GATE-02 | [~] | 已有 `CardinalityState(p,z,u,q_min,q_max)` 与强制 presence 传播；`q_min=q_max` 的完整任务闭包仍未完成。 |
 | GATE-03 | [~] | 已加入 `PRESENT_UNOBSERVED`/`INITIALIZED` 并接入部分 scheduler/candidate/pipeline；所有 planner 分支尚未完全统一。 |
-| GATE-04 | [~] | 已有 D、MEC、area、kappa、principal axis；coverage debt/initialization/robot distance 尚未形成统一 readiness 摘要。 |
+| GATE-04 | [x] | `ChannelBelief.readiness_snapshot()` 已统一输出 D/diameter、MEC radius、area、kappa、components、coverage debt、initialization readiness、robot distance 和 readiness score；新增 snapshot 回归测试通过。 |
 | GATE-05 | [x] | `MacroActionType` 与 `CandidateGenerator`/executor 已覆盖并测试五类正式 macro：EXPLORE、INITIALIZE、REFINE、VERIFY、CLEAR；对应 candidate-generator、macro-executor 回归通过。 |
 | GATE-06 | [~] | 已有 per-channel coverage debt/uncovered area 状态与测试；仍是 planner-only 栅格近似。 |
 | GATE-07 | [~] | `AdaptiveScanSession`、`execute_adaptive()` 和 `Way4Pipeline(adaptive_scan=True)` 已存在并有测试；默认 benchmark 仍使用 legacy batch，尚缺公平评测。 |

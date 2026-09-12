@@ -1,0 +1,29 @@
+{
+  "artifacts": [
+    "results\\p4_gate_schema_smoke.json"
+  ],
+  "n_artifacts": 1,
+  "n_rows": 1,
+  "n_full_clear": 0,
+  "full_clear_rate": 0.0,
+  "failed_rows": [
+    {
+      "seed": 4000,
+      "error": null,
+      "truth_cleared": 0,
+      "truth_total": 13
+    }
+  ],
+  "full_clear_time_s": {
+    "n": 0,
+    "mean": null,
+    "median": null,
+    "p90": null,
+    "p95": null,
+    "max": null
+  },
+  "rho_over_lb": {
+    "n": 0,
+    "mean": null
+  }
+}

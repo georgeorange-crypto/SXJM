@@ -62,6 +62,10 @@ class FutureCost:
     total: float = 0.0
     n_cover_stops: int = 0
     measurement_predictions: dict = field(default_factory=dict)
+    # Diagnostics for the additive-vs-unified route comparison.
+    j_additive: float = 0.0
+    j_joint: float = 0.0
+    route_synergy: float = 0.0
 
 
 @dataclass
@@ -197,8 +201,11 @@ class FutureCostEstimator:
             + self.w_exploration * j_expl
             + self.w_certificate * j_cert
         )
-        return FutureCost(j_route, j_loc, j_expl, j_cert, total, n_stops,
-                          self._measurement_predictions(view))
+        result = FutureCost(j_route, j_loc, j_expl, j_cert, total, n_stops,
+                            self._measurement_predictions(view))
+        result.j_additive = float(total)
+        result.j_joint = float(total)
+        return result
 
     # -- joint route (P0 #4/#7, planner=spatial) ---------------------------
 
@@ -258,7 +265,13 @@ class FutureCostEstimator:
             + self.w_certificate * j_cert
         )
         joint = FutureCost(j_route, j_loc, j_expl, j_cert, total, len(chosen))
-        return joint if joint.total <= add.total else add
+        joint.j_additive = float(add.total)
+        joint.j_joint = float(min(joint.total, add.total))
+        joint.route_synergy = max(0.0, joint.j_additive - joint.j_joint)
+        if joint.total <= add.total:
+            return joint
+        add.route_synergy = 0.0
+        return add
 
     # -- J_route ------------------------------------------------------------
 

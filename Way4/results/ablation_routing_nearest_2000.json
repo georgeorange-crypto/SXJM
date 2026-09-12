@@ -1,0 +1,26 @@
+{
+  "problem": 4,
+  "seeds": [
+    2000
+  ],
+  "results": {
+    "routing_nearest": [
+      {
+        "seed": 2000,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 17674.910419,
+        "error": null,
+        "steps": 119
+      }
+    ]
+  },
+  "selected_cells": [
+    "routing_nearest"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": true
+}

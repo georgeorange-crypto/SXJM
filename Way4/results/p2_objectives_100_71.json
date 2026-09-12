@@ -1,0 +1,35 @@
+{
+  "seed": 71,
+  "trials": 100,
+  "benchmark": "synthetic_single_source",
+  "guaranteed_detection_radius_m": 1000.0,
+  "modes": {
+    "minimax": {
+      "valid": 100,
+      "miss_rate": 0.0,
+      "mean_realized_diameter_m": 52.95951057854648,
+      "p95_realized_diameter_m": 102.46739831359429,
+      "worst_realized_diameter_m": 154.27945127759057,
+      "mean_predicted_diameter_m": 60.08227114369103,
+      "mean_objective_score": 194.5286197988536
+    },
+    "expected": {
+      "valid": 100,
+      "miss_rate": 0.0,
+      "mean_realized_diameter_m": 55.98650945671556,
+      "p95_realized_diameter_m": 102.46739831359429,
+      "worst_realized_diameter_m": 123.44840350026983,
+      "mean_predicted_diameter_m": 55.49256907027483,
+      "mean_objective_score": 206.60754650224598
+    },
+    "time": {
+      "valid": 100,
+      "miss_rate": 0.36,
+      "mean_realized_diameter_m": 884.559000270158,
+      "p95_realized_diameter_m": 1503.2185062109493,
+      "worst_realized_diameter_m": 1503.2185062109509,
+      "mean_predicted_diameter_m": 992.4445359021043,
+      "mean_objective_score": 23.063791772957465
+    }
+  }
+}

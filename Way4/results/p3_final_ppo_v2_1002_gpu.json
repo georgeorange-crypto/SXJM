@@ -1,0 +1,29 @@
+{
+  "checkpoint": "SXJM\\Way4\\runs\\candidate_ppo_relational_v2_seed2000.pt",
+  "problem": 3,
+  "planner_mode": "final_ppo",
+  "rows": [
+    {
+      "seed": 1002,
+      "full_clear": true,
+      "cleared": 14,
+      "total": 14,
+      "time_s": 6156.194515,
+      "avg_time_per_source_s": 439.7281796428571,
+      "steps": 27,
+      "move_m": 25640.97256932852,
+      "measure": 160,
+      "switch": 158,
+      "clear": 14,
+      "clear_hit": 14,
+      "services_per_stop": 6.6923076923076925,
+      "revisit_distance": 0.0,
+      "shared_stop_ratio": 0.5769230769230769,
+      "policy_decisions": 26,
+      "ppo_fallback": false,
+      "ppo_fallback_reason": null,
+      "error": null
+    }
+  ],
+  "full_clear_rate": 1.0
+}

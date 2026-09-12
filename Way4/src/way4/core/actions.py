@@ -87,6 +87,15 @@ class MacroCandidate:
     refinement_gain: float = 0.0
     certificate_gain: float = 0.0
     route_gain: float = 0.0
+    # Explicit route semantics. ``route_marginal`` is a cost (lower is better),
+    # ``route_saving`` is a gain (higher is better); route_gain is retained only
+    # for backward-compatible artifact loading.
+    route_marginal: float = 0.0
+    route_saving: float = 0.0
+    route_synergy: float = 0.0
+    n_measure_services: int = 0
+    n_clear_services: int = 0
+    service_density: float = 0.0
 
     # filled in by the cost model / planner.
     expected_time: float = 0.0

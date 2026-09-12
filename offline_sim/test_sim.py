@@ -643,6 +643,14 @@ def test_p4_generation_forces_mix():
     check("P4 显式 n_dir=0 被夹回(dir≥1)", c0.n_dir >= 1, str(c0.n_dir))
 
 
+def test_p4_hard_generation_is_all_directional():
+    """hard P4 is the worst-case baseline: every source is directional."""
+    c = generate_case(seed=9001, problem=4, n_jammers=16, n_directional=0,
+                      hard=True, mode="formal")
+    check("P4 hard 模式全部定向", c.total == 16 and c.n_dir == 16 and c.n_omni == 0,
+          f"total={c.total} omni={c.n_omni} dir={c.n_dir}")
+
+
 def test_reff_allows_duplicates():
     """R_eff 不强制互异：允许重复（用 case 文件往返验证任意值可载入）。"""
     js = [Jammer(1, 100, 0, 1200.0, "omni"), Jammer(2, -100, 0, 1200.0, "omni")]

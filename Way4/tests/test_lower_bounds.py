@@ -2,6 +2,8 @@ import pytest
 from way4.planner.lower_bounds import (
     certified_gap, mission_lower_bound, open_mst_lower_bound, service_lower_bound,
 )
+from way4.evaluation_metrics import episode_row
+from types import SimpleNamespace
 
 
 def test_open_mst_bound_is_not_above_a_simple_open_route():
@@ -21,3 +23,10 @@ def test_mission_bound_uses_max_travel_to_avoid_double_counting():
 def test_service_and_certified_gap_are_explicit():
     assert service_lower_bound(2, 3, 1) == 26.0
     assert certified_gap(30.0, 20.0) == pytest.approx(0.5)
+
+
+def test_episode_metrics_expose_time_to_lower_bound_ratio():
+    row = episode_row(SimpleNamespace(virtual_time_s=30.0), lower_bound_s=20.0)
+    assert row["T_lower_bound_s"] == 20.0
+    assert row["rho_T_over_LB"] == pytest.approx(1.5)
+    assert row["certified_gap"] == pytest.approx(0.5)

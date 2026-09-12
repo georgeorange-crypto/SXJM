@@ -1,0 +1,54 @@
+{
+  "problem": 4,
+  "hard": false,
+  "split": null,
+  "field_kind": "smooth",
+  "seeds": [
+    4000
+  ],
+  "batch_stop": true,
+  "rows": [
+    {
+      "seed": 4000,
+      "source_count": 13,
+      "full_clear": false,
+      "truth_cleared": 0,
+      "truth_total": 13,
+      "time_s": 0.0,
+      "error": null,
+      "steps": 0,
+      "move_distance_m": 0.0,
+      "n_measure": 0,
+      "n_switch": 0,
+      "n_clear": 0,
+      "n_clear_hit": 0,
+      "time_move_s": 0.0,
+      "time_measure_s": 0.0,
+      "time_switch_s": 0.0,
+      "time_clear_s": 0.0,
+      "route_n_stops": 0,
+      "revisit_distance": 0.0,
+      "certificate_only_travel": 0.0,
+      "seconds_per_target": 0.0,
+      "T_lower_bound_s": 1808.9327906547176,
+      "rho_T_over_LB": 0.0,
+      "certified_gap": -1.0
+    }
+  ],
+  "completed_seeds": [
+    4000
+  ],
+  "status": "complete",
+  "full_clear_rate": 0.0,
+  "full_clear_time_s": {
+    "n": 0,
+    "mean": null,
+    "median": null,
+    "p90": null,
+    "p95": null,
+    "max": null
+  },
+  "target_s_per_target": 400.0,
+  "target_pass_full_clear_rows": false,
+  "target_required": false
+}

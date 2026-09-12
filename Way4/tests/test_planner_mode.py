@@ -53,6 +53,12 @@ def test_spatial_mode_wraps_a_candidate_generator():
     assert isinstance(pipe.generator, SpatialStopGenerator)
     # it WRAPS (never replaces) the frozen generator — the non-destructive guarantee.
     assert isinstance(pipe.generator.base, CandidateGenerator)
+    assert pipe.planner.fce.joint_route is True
+
+
+def test_legacy_mode_keeps_additive_future_cost():
+    pipe = Way4Pipeline(_StubEnv())
+    assert pipe.planner.fce.joint_route is False
 
 
 def test_explicit_generator_overrides_mode():

@@ -1,0 +1,26 @@
+{
+  "problem": 4,
+  "seeds": [
+    2001
+  ],
+  "results": {
+    "adaptive_rerank_stop": [
+      {
+        "seed": 2001,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 14961.612486,
+        "error": null,
+        "steps": 89
+      }
+    ]
+  },
+  "selected_cells": [
+    "adaptive_rerank_stop"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": true
+}

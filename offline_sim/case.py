@@ -197,6 +197,7 @@ def generate_case(
     n_jammers: Optional[int] = None,       # None → 随机 10..16
     n_directional: Optional[int] = None,   # 仅 problem=4 有意义；None → 随机
     mode: str = "practice",
+    hard: bool = False,
     margin_m: float = 30.0,                # 干扰源离区域边界的最小内缩，避免贴边
     field_kind: str = "smooth",            # 误差场类型（见 fields.py）
     field_params: Optional[dict] = None,   # 误差场参数（如 length_scale/bias/…）
@@ -216,7 +217,9 @@ def generate_case(
 
     channels = rng.sample(range(CHANNEL_MIN, CHANNEL_MAX + 1), n_jammers)
 
-    if problem == 4:
+    if problem == 4 and hard:
+        n_directional = n_jammers
+    elif problem == 4:
         # 题面：P4 既有全向也有定向 → 强制 1 ≤ n_dir ≤ n-1（两类都至少 1 个）。
         if n_directional is None:
             n_directional = rng.randint(1, n_jammers - 1)

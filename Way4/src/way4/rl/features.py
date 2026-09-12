@@ -26,6 +26,7 @@ drift can't desync a trained checkpoint.
 from __future__ import annotations
 
 from typing import List, Optional, Sequence
+import hashlib
 
 from sxjm_core.geometry import dist
 
@@ -42,7 +43,7 @@ ARENA_R = 1800.0
 #: Nominal candidate-set size used only to scale the "how many options" feature.
 NOMINAL_CANDS = 32.0
 
-#: The seven macro intents, in a FROZEN order for the one-hot block (§7).
+#: The eight macro intents, in a FROZEN order for the one-hot block (§7).
 _ACTION_ORDER: List[MacroActionType] = [
     MacroActionType.EXPLORE,
     MacroActionType.INITIALIZE,
@@ -50,13 +51,16 @@ _ACTION_ORDER: List[MacroActionType] = [
     MacroActionType.PURSUE,
     MacroActionType.CLEAR,
     MacroActionType.VERIFY,
+    MacroActionType.STOP,
     MacroActionType.EXIT,
 ]
 _ACTION_INDEX = {a: i for i, a in enumerate(_ACTION_ORDER)}
 
 #: Per-candidate block width = one-hot(7) + gains(4) + (immediate, future, q)(3)
 #: + scan_frac(1) + travel(1) + is_scan(1).
-CANDIDATE_FEATURE_DIM = len(_ACTION_ORDER) + 4 + 3 + 1 + 1 + 1
+# gains(4), route marginal/saving/synergy(3), costs(3), scan/travel/is_scan(3),
+# multi-service count/density(3)
+CANDIDATE_FEATURE_DIM = len(_ACTION_ORDER) + 4 + 3 + 3 + 1 + 1 + 1 + 3
 CHANNEL_FEATURE_DIM = 5  # area, diameter, kappa, coverage debt, readiness
 #: Global/context block: base global features (7) plus selected-channel geometry
 #: (effective area, diameter, kappa, coverage debt, readiness).
@@ -64,6 +68,9 @@ GLOBAL_FEATURE_DIM = 4 + 2 + 1 + CHANNEL_FEATURE_DIM
 # channel block is included in the default evaluation vector.
 #: Full input vector = per-candidate ++ global ++ selected-channel geometry.
 FEATURE_DIM = CANDIDATE_FEATURE_DIM + GLOBAL_FEATURE_DIM
+FEATURE_SCHEMA_VERSION = 2
+FEATURE_SCHEMA_SPEC = "action=" + ",".join(a.value for a in _ACTION_ORDER) + ";candidate_dim=" + str(CANDIDATE_FEATURE_DIM)
+FEATURE_SCHEMA_HASH = hashlib.sha256(FEATURE_SCHEMA_SPEC.encode("utf-8")).hexdigest()
 
 
 def _action_one_hot(action_type: MacroActionType) -> List[float]:
@@ -94,6 +101,9 @@ def candidate_block(
     feats.append(float(candidate.refinement_gain))
     feats.append(float(candidate.certificate_gain))
     feats.append(float(candidate.route_gain))
+    feats.append(float(getattr(candidate, "route_marginal", candidate.meta.get("route_marginal", 0.0))) / T_SCALE)
+    feats.append(float(getattr(candidate, "route_saving", candidate.meta.get("route_saving", 0.0))) / T_SCALE)
+    feats.append(float(getattr(candidate, "route_synergy", candidate.meta.get("route_synergy", 0.0))) / T_SCALE)
     feats.append(float(immediate_cost) / T_SCALE)
     feats.append(float(future_cost) / T_SCALE)
     feats.append(float(q_value) / T_SCALE)
@@ -101,6 +111,9 @@ def candidate_block(
     feats.append(n_scan / float(max(1, n_channels)))
     feats.append(dist(robot_pos, candidate.target) / ARENA_R)
     feats.append(1.0 if getattr(candidate, "is_scan", False) else 0.0)
+    feats.append(float(getattr(candidate, "n_measure_services", len(getattr(candidate, "scan_channels", ())))) / max(1, n_channels))
+    feats.append(float(getattr(candidate, "n_clear_services", len(getattr(candidate, "clear_channels", ())))) / max(1, n_channels))
+    feats.append(float(getattr(candidate, "service_density", 0.0)))
     return feats
 
 
@@ -155,11 +168,22 @@ def channel_context_block(evaluation, belief, state, certificate=None) -> List[f
     if channel is None or channel not in belief.channels:
         return [0.0] * CHANNEL_FEATURE_DIM
     b = belief[channel]
-    area = min(1.0, max(0.0, b.effective_area(spacing=60.0) / (3.141592653589793 * ARENA_R ** 2)))
-    diameter = min(2.0, max(0.0, b.effective_diameter(spacing=60.0) / ARENA_R))
-    kappa = min(20.0, max(1.0, float(getattr(b, "kappa", 1.0)))) / 20.0
     debt = certificate.coverage_debt(channel) if certificate is not None else 0.0
-    readiness = float(getattr(b, "initialization_ready", False))
+    snapshot = getattr(b, "readiness_snapshot", None)
+    if snapshot is not None:
+        summary = snapshot((state.x, state.y), debt)
+        area_raw = float(summary["area"])
+        diameter_raw = float(summary["diameter"])
+        kappa_raw = float(summary["kappa"])
+        readiness = float(summary["initialization_ready"])
+    else:
+        area_raw = float(b.effective_area(spacing=60.0))
+        diameter_raw = float(b.effective_diameter(spacing=60.0))
+        kappa_raw = float(getattr(b, "kappa", 1.0))
+        readiness = float(getattr(b, "initialization_ready", False))
+    area = min(1.0, max(0.0, area_raw / (3.141592653589793 * ARENA_R ** 2)))
+    diameter = min(2.0, max(0.0, diameter_raw / ARENA_R))
+    kappa = min(20.0, max(1.0, kappa_raw)) / 20.0
     return [area, diameter, kappa, float(debt), readiness]
 
 

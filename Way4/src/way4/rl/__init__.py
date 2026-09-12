@@ -34,7 +34,9 @@ from .train import (
     TrainConfig,
     episode_return,
 )
-from .candidate_ppo import CandidateActorCritic, CandidateChannelFeatures, SpatialCandidate, CandidatePPOTrainer, PPOConfig, compute_gae
+from .candidate_ppo import (CandidateActorCritic, CandidateChannelFeatures,
+                            SpatialCandidate, CandidatePPOTrainer, PPOConfig,
+                            compute_gae, EdgeAwareCandidateGNN, MODEL_SCHEMA)
 from .candidate_rollout import CandidateTransition, finish_episode, collate
 from .smdp import SMDPTrainConfig, TabularSMDPLearner
 
@@ -59,6 +61,8 @@ __all__ = [
     "CandidatePPOTrainer",
     "PPOConfig",
     "compute_gae",
+    "EdgeAwareCandidateGNN",
+    "MODEL_SCHEMA",
     "CandidateTransition",
     "finish_episode",
     "collate",

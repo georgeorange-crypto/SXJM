@@ -25,6 +25,11 @@ def run_cell(name, seed, max_steps):
         "way4_full": dict(planner_mode="route_math"),
         "adaptive_rerank": dict(planner_mode="route_math", adaptive_scan=True),
         "adaptive_rerank_stop": dict(planner_mode="route_math", adaptive_scan=True, batch_stop=True),
+        "routing_nearest": dict(planner_mode="route_math", routing_strategy="nearest"),
+        "nbv_greedy": dict(planner_mode="route_math", nbv_objective="greedy"),
+        "coverage_backbone_only": dict(planner_mode="route_math", coverage_strategy="backbone_only"),
+        "minus_no_signal": dict(planner_mode="route_math", enable_no_signal=False),
+        "minus_cardinality": dict(planner_mode="route_math", enable_cardinality=False),
     }
     if name not in supported:
         return {"seed": seed, "success": None,
@@ -43,6 +48,9 @@ def run_cell(name, seed, max_steps):
             # clearance is reported separately and must not mask a stall.
             "success": bool(result.success),
             "full_clear": bool(case.cleared_count == case.total),
+            "resolved": result.resolved,
+            "n_channels": result.n_channels,
+            "present": result.present,
             "virtual_time_s": result.virtual_time_s,
             "error": result.error,
             "steps": result.steps,
@@ -56,6 +64,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seeds", default="2000-2001")
     parser.add_argument("--max-steps", type=int, default=3000)
+    parser.add_argument("--cells", default=None,
+                        help="comma-separated cell names; default runs the full frozen matrix")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
     if "-" in args.seeds:
@@ -63,11 +73,26 @@ def main():
         seeds = list(range(lo, hi + 1))
     else:
         seeds = [int(x) for x in args.seeds.split(",")]
+    selected = set(args.cells.split(",")) if args.cells else {s.name for s in DETERMINISTIC_ABLATIONS}
+    unknown = selected - {s.name for s in DETERMINISTIC_ABLATIONS}
+    if unknown:
+        parser.error(f"unknown cells: {sorted(unknown)}")
     results = {}
     for spec in DETERMINISTIC_ABLATIONS:
-        results[spec.name] = [run_cell(spec.name, seed, args.max_steps) for seed in seeds]
+        if spec.name not in selected:
+            continue
+        results[spec.name] = []
+        for seed in seeds:
+            results[spec.name].append(run_cell(spec.name, seed, args.max_steps))
+            # Preserve every completed episode if a later cell is slow or fails.
+            partial = {"problem": 4, "seeds": seeds, "results": results,
+                       "selected_cells": sorted(selected),
+                       "unsupported_are_explicit": True, "complete": False}
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(json.dumps(partial, ensure_ascii=False, indent=2), encoding="utf-8")
     payload = {"problem": 4, "seeds": seeds, "results": results,
-               "unsupported_are_explicit": True}
+               "selected_cells": sorted(selected),
+               "unsupported_are_explicit": True, "complete": True}
     output = Path(args.out)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -1,0 +1,39 @@
+{
+  "math": [
+    {
+      "seed": 2050,
+      "full_clear": true,
+      "time_s": 14476.538855,
+      "move_m": 43372.76104780242,
+      "measure": 578,
+      "switch": 511,
+      "clear": 9,
+      "error": null
+    },
+    {
+      "seed": 2051,
+      "full_clear": true,
+      "time_s": 14505.145119,
+      "move_m": 41860.35195369765,
+      "measure": 703,
+      "switch": 607,
+      "clear": 3,
+      "error": null
+    }
+  ],
+  "ppo": [],
+  "paired": null,
+  "complete": false,
+  "seeds": [
+    2050,
+    2051,
+    2052,
+    2053,
+    2054,
+    2055,
+    2056,
+    2057,
+    2058,
+    2059
+  ]
+}

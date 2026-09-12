@@ -1,0 +1,84 @@
+{
+  "audit": "way4-end-to-end-invariants-v1",
+  "problem": 3,
+  "seeds": [
+    1010,
+    1011,
+    1012,
+    1013,
+    1014
+  ],
+  "rows": [
+    {
+      "seed": 1010,
+      "problem": 3,
+      "truth_total": 15,
+      "truth_cleared": 15,
+      "resolved": 20,
+      "n_channels": 20,
+      "full_clear": true,
+      "exited": true,
+      "error": null,
+      "steps": 31,
+      "virtual_time_s": 5482.192951,
+      "invariants_passed": true
+    },
+    {
+      "seed": 1011,
+      "problem": 3,
+      "truth_total": 12,
+      "truth_cleared": 12,
+      "resolved": 20,
+      "n_channels": 20,
+      "full_clear": true,
+      "exited": true,
+      "error": null,
+      "steps": 41,
+      "virtual_time_s": 4643.539427,
+      "invariants_passed": true
+    },
+    {
+      "seed": 1012,
+      "problem": 3,
+      "truth_total": 12,
+      "truth_cleared": 12,
+      "resolved": 20,
+      "n_channels": 20,
+      "full_clear": true,
+      "exited": true,
+      "error": null,
+      "steps": 32,
+      "virtual_time_s": 6045.542001,
+      "invariants_passed": true
+    },
+    {
+      "seed": 1013,
+      "problem": 3,
+      "truth_total": 13,
+      "truth_cleared": 13,
+      "resolved": 20,
+      "n_channels": 20,
+      "full_clear": true,
+      "exited": true,
+      "error": null,
+      "steps": 33,
+      "virtual_time_s": 5389.431957,
+      "invariants_passed": true
+    },
+    {
+      "seed": 1014,
+      "problem": 3,
+      "truth_total": 14,
+      "truth_cleared": 14,
+      "resolved": 20,
+      "n_channels": 20,
+      "full_clear": true,
+      "exited": true,
+      "error": null,
+      "steps": 29,
+      "virtual_time_s": 5414.602613,
+      "invariants_passed": true
+    }
+  ],
+  "all_invariants_passed": true
+}

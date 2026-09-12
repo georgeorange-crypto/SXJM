@@ -150,6 +150,14 @@ def test_guard_uses_guaranteed_detection_radius_not_the_optimistic_upper_bound()
     assert nbv.detect_lower_bound == 1000.0
 
 
+def test_whole_feasible_polygon_is_used_for_guaranteed_range_gate():
+    nbv = MinimaxNBV()
+    poly = [(0.0, 0.0), (1500.0, 0.0), (1500.0, 20.0), (0.0, 20.0)]
+    assert nbv.guaranteed_range_violation(poly, (500.0, 0.0)) is True
+    assert nbv.guaranteed_range_violation(poly, (200.0, 0.0)) is True
+    assert nbv.guaranteed_range_violation(poly, (750.0, 1000.0)) is True
+
+
 def test_choose_returns_none_when_nothing_to_refine():
     nbv = MinimaxNBV()
     assert nbv.choose(ChannelBelief(channel=1), robot_pos=(0.0, 0.0)) is None
@@ -160,3 +168,16 @@ def test_hypotheses_capped():
     b = _first_bearing_belief((0.0, 0.0), 10.0)
     hyps = nbv.representative_hypotheses(b.F_c)
     assert 0 < len(hyps) <= 8
+
+
+@pytest.mark.parametrize("objective", ["expected", "time"])
+def test_p2_multiobjective_modes_report_non_certificate_metrics(objective):
+    nbv = MinimaxNBV(objective=objective, lambda_t=0.01)
+    b = _first_bearing_belief((0.0, 0.0), 25.0)
+    result = nbv.choose(b, robot_pos=(0.0, 0.0))
+    assert result is not None
+    assert result.expected_diameter >= 0.0
+    assert 0.0 <= result.guaranteed_miss_rate <= 1.0
+    # The metrics are diagnostics for objective comparison, not an absence
+    # or clear certificate.
+    assert result.n_candidates > 0

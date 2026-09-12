@@ -9,11 +9,20 @@ class EvaluationSplits:
     validation: Tuple[int, ...] = tuple(range(2040, 2050))
     test: Tuple[int, ...] = tuple(range(2050, 2060))
     stress: Tuple[int, ...] = tuple(range(3000, 3020))
+    # Hand-selected geometry/regime probes; never used for tuning.
+    adversarial: Tuple[int, ...] = tuple(range(4000, 4010))
     def assert_disjoint(self):
-        sets = [set(self.train), set(self.validation), set(self.test), set(self.stress)]
+        sets = [set(self.train), set(self.validation), set(self.test), set(self.stress), set(self.adversarial)]
         assert all(not (sets[i] & sets[j]) for i in range(4) for j in range(i+1,4))
     def test_is_locked(self, seed):
         return seed in self.test and seed not in self.train and seed not in self.validation
+
+    def split_of(self, seed):
+        """Return the sole frozen split containing ``seed``, or ``None``."""
+        for name in ("train", "validation", "test", "stress", "adversarial"):
+            if seed in getattr(self, name):
+                return name
+        return None
 
 DEFAULT_SPLITS = EvaluationSplits()
 DEFAULT_SPLITS.assert_disjoint()
@@ -71,9 +80,17 @@ def summarize_ablation_results(specs, results):
             idx = 0.9 * (len(times) - 1)
             lo, hi = math.floor(idx), math.ceil(idx)
             p90 = times[lo] if lo == hi else times[lo] + (times[hi] - times[lo]) * (idx - lo)
+        if not rows:
+            status = "missing"
+        elif not valid:
+            status = "failed"
+        elif len(valid) == len(rows):
+            status = "complete"
+        else:
+            status = "partial"
         out.append({
             "name": spec.name,
-            "status": "complete" if valid and len(valid) == len(rows) else ("partial" if valid else "missing"),
+            "status": status,
             "n_rows": len(rows),
             "n_valid": len(valid),
             "n_success": successes,

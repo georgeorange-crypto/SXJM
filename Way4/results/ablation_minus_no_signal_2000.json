@@ -1,0 +1,26 @@
+{
+  "problem": 4,
+  "seeds": [
+    2000
+  ],
+  "results": {
+    "minus_no_signal": [
+      {
+        "seed": 2000,
+        "success": false,
+        "full_clear": false,
+        "resolved": 7,
+        "n_channels": 20,
+        "present": 7,
+        "virtual_time_s": 5732.322481,
+        "error": "no_progress_stall",
+        "steps": 33
+      }
+    ]
+  },
+  "selected_cells": [
+    "minus_no_signal"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": true
+}

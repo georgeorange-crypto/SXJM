@@ -23,6 +23,8 @@ from .hard_disc_cover import (
 from .fallback import (
     omni_fallback_anchors,
     directional_fallback_anchors,
+    ray_sweep_points,
+    triangular_clear_sweep_points,
     assert_backbone_covers,
     ARENA_RADIUS_M,
     DETECTION_RADIUS_M,
@@ -52,6 +54,8 @@ __all__ = [
     "distance",
     "omni_fallback_anchors",
     "directional_fallback_anchors",
+    "ray_sweep_points",
+    "triangular_clear_sweep_points",
     "assert_backbone_covers",
     "ARENA_RADIUS_M",
     "DETECTION_RADIUS_M",

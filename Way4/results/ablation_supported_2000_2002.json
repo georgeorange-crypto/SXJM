@@ -1,0 +1,65 @@
+{
+  "problem": 4,
+  "seeds": [
+    2000,
+    2001,
+    2002
+  ],
+  "results": {
+    "way4_full": [
+      {
+        "seed": 2000,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 15358.975213,
+        "error": null,
+        "steps": 88
+      },
+      {
+        "seed": 2001,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 14787.743783,
+        "error": null,
+        "steps": 73
+      },
+      {
+        "seed": 2002,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 15,
+        "virtual_time_s": 16101.158589,
+        "error": null,
+        "steps": 96
+      }
+    ],
+    "adaptive_rerank": [
+      {
+        "seed": 2000,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 16049.70967,
+        "error": null,
+        "steps": 104
+      }
+    ]
+  },
+  "selected_cells": [
+    "adaptive_rerank",
+    "adaptive_rerank_stop",
+    "way4_full"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": false
+}

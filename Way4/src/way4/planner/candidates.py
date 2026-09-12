@@ -27,7 +27,7 @@ Robot scan points are NOT clamped to the arena (源/机器人域分离, §7).
 
 from __future__ import annotations
 
-from math import cos, hypot, radians, sin
+from math import cos, hypot, radians, sin, sqrt
 from typing import List, Optional, Sequence, Tuple
 
 from ..belief import ChannelStatus
@@ -51,6 +51,8 @@ class CandidateGenerator:
         include_origin_explore: bool = True,
         min_coverage_gain: float = 1e-9,
         hypothesis_layer=None,
+        coverage_strategy: str = "active_fallback",
+        min_sensing_efficiency: float = 0.0,
     ) -> None:
         self.nbv = nbv or MinimaxNBV()
         self.scheduler = scheduler or ChannelScheduler()
@@ -62,6 +64,10 @@ class CandidateGenerator:
         self.include_origin_explore = bool(include_origin_explore)
         self.min_coverage_gain = float(min_coverage_gain)
         self.hypotheses = hypothesis_layer
+        if coverage_strategy not in ("active_fallback", "backbone_only"):
+            raise ValueError("coverage_strategy must be 'active_fallback' or 'backbone_only'")
+        self.coverage_strategy = coverage_strategy
+        self.min_sensing_efficiency = float(min_sensing_efficiency)
 
     # -- public -------------------------------------------------------------
 
@@ -107,6 +113,24 @@ class CandidateGenerator:
         for base in list(raw):
             if base.action_type != MacroActionType.REFINE:
                 continue
+            # Promote the NBV opportunity set into the spatial candidate pool;
+            # the original minimax candidate remains in ``raw``.
+            channel_id = base.meta.get("refine_channel")
+            if channel_id is not None:
+                for opp in self.nbv.propose(belief[int(channel_id)], state.pos, limit=4):
+                    if opp.point == base.target:
+                        continue
+                    alt = MacroCandidate(base.action_type, opp.point,
+                                         scan_channels=base.scan_channels)
+                    alt.refinement_gain = opp.information_gain
+                    alt.certificate_gain = base.certificate_gain
+                    alt.exploration_gain = base.exploration_gain
+                    alt.expected_time = self.cost.batch_scan_time_s(state, alt.target, alt.scan_channels)
+                    alt.route_marginal = alt.expected_time
+                    alt.meta.update(base.meta)
+                    alt.meta.update({"spatial_variant": True, "opportunity_family": opp.family,
+                                     "opportunity_worst_diameter": opp.worst_case_diameter})
+                    expanded.append(alt)
             x, y = base.target
             for dx, dy in ((80., 0.), (-80., 0.), (0., 80.), (0., -80.)):
                 alt = MacroCandidate(base.action_type, (x + dx, y + dy),
@@ -209,6 +233,7 @@ class CandidateGenerator:
             m.expected_time = self.cost.batch_scan_time_s(state, q, plan_channels)
             m.meta["refine_channel"] = c
             m.meta["worst_case_diameter"] = res.worst_case_diameter
+            m.meta["tspn_radius"] = max(0.0, float(getattr(belief[c], "mec_radius", 0.0)))
             out.append(m)
 
             # Keep a separate completion-oriented option in the pool.  The
@@ -272,22 +297,31 @@ class CandidateGenerator:
     def _explore_candidates(
         self, belief, certificate, state: RobotState, scan_mode: SchedulerMode
     ) -> List[MacroCandidate]:
+        if self.coverage_strategy == "backbone_only":
+            return []
         # PRESENT_UNOBSERVED has its own INITIALIZE option family above.
         unknown = belief.unknown_channels()
         if not unknown:
             return []
         pool = self._explore_pool(certificate, state)
         # score each waypoint by joint UNKNOWN coverage gain (multipurpose, §8)
-        scored: List[Tuple[float, Point]] = []
+        scored: List[Tuple[float, float, Point]] = []
         for q in pool:
             g = self._unknown_coverage_gain(belief, certificate, unknown, q)
-            scored.append((g, q))
-        scored.sort(key=lambda t: -t[0])
+            # RHO-style value density: candidate truncation must account for
+            # travel plus the whole batch dwell, not just raw coverage gain.
+            plan = self.scheduler.select(q, belief, certificate, state.channel, mode=scan_mode)
+            if plan.is_empty:
+                continue
+            dwell = self.cost.batch_scan_time_s(state, q, plan.channels)
+            density = g / max(dwell, 1e-9)
+            scored.append((density, g, q))
+        scored.sort(key=lambda t: (-t[0], -t[1], t[2]))
 
         verify = scan_mode == SchedulerMode.VERIFICATION
         action = MacroActionType.VERIFY if verify else MacroActionType.EXPLORE
         out: List[MacroCandidate] = []
-        for g, q in scored:
+        for _density, g, q in scored:
             if len(out) >= self.max_explore:
                 break
             plan = self.scheduler.select(q, belief, certificate, state.channel, mode=scan_mode)
@@ -295,6 +329,15 @@ class CandidateGenerator:
                 continue
             channels = tuple(plan.channels)
             cov_gain = self._unknown_coverage_gain(belief, certificate, channels, q)
+            soft_gain = (self.hypotheses.batch_information_gain(channels, q)
+                         if self.hypotheses is not None else 0.0)
+            # Selective sensing: coverage information must justify the complete
+            # move/measure/switch cost.  Zero keeps legacy behaviour for ablations;
+            # positive thresholds activate the checklist's IG / time gate.
+            if self.min_sensing_efficiency > 0.0:
+                efficiency = cov_gain / max(float(self.cost.batch_scan_time_s(state, q, channels)), 1e-9)
+                if efficiency < self.min_sensing_efficiency:
+                    continue
             # An explore's whole job is UNKNOWN coverage (§8). A waypoint whose batch
             # gains no new coverage is a no-op — at an already-scanned spot the only
             # eligible channels are DETECTED re-scans (covers nothing new, doesn't
@@ -308,7 +351,13 @@ class CandidateGenerator:
                 continue
             m = MacroCandidate(action, q, scan_channels=channels)
             m.certificate_gain = cov_gain
-            m.exploration_gain = plan.value
+            # Soft hypothesis gain is a ranking signal only.  The hard coverage
+            # gain remains authoritative for certificate progress.
+            m.exploration_gain = plan.value + soft_gain
+            m.meta["soft_information_gain"] = float(soft_gain)
+            m.meta["soft_entropy_before"] = float(sum(
+                self.hypotheses.channel(ch).posterior_entropy() for ch in channels
+            )) if self.hypotheses is not None else 0.0
             m.expected_time = self.cost.batch_scan_time_s(state, q, channels)
             out.append(m)
         return out
@@ -363,22 +412,30 @@ class CandidateGenerator:
         ]
         if not pending:
             return []
-        anchors = certificate.anchors
+        # Responsibility is dynamic: visits made by any legal action are already
+        # folded into the per-channel certificate, so do not revisit retired
+        # backbone points merely because they remain in the static template.
         # anchors still unvisited by at least one pending channel, nearest-first
-        scored: List[Tuple[float, int, Point, List[int]]] = []
-        for j, a in enumerate(anchors):
+        scored: List[Tuple[float, float, int, Point, List[int]]] = []
+        for j, a in enumerate(certificate.anchors):
             ap = (float(a[0]), float(a[1]))
             chans = [
                 c for c in pending
                 if j not in certificate.certs[c].visited_anchor_idx
             ]
-            if chans:
-                scored.append((hypot(state.pos[0] - ap[0], state.pos[1] - ap[1]), j, ap, chans))
+            if chans and any(j not in certificate.certs[c].visited_anchor_idx for c in chans):
+                distance = hypot(state.pos[0] - ap[0], state.pos[1] - ap[1])
+                # Prefer a nearby anchor that can batch more pending channels,
+                # while retaining distance as the secondary tie-breaker.  This
+                # changes only proposal order; every anchor remains available and
+                # the completion certificate still requires all of them.
+                batch_adjusted = distance / sqrt(max(1, len(chans)))
+                scored.append((batch_adjusted, distance, j, ap, chans))
         if not scored:
             return []
-        scored.sort(key=lambda t: t[0])
+        scored.sort(key=lambda t: (t[0], t[1], t[2]))
         out: List[MacroCandidate] = []
-        for _d, j, ap, chans in scored[: self.max_explore]:
+        for _adjusted, _d, j, ap, chans in scored[: self.max_explore]:
             plan = self.scheduler.select(
                 ap, belief, certificate, state.channel,
                 mode=SchedulerMode.VERIFICATION, must_include=chans,

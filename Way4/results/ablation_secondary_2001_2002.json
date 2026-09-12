@@ -1,0 +1,113 @@
+{
+  "problem": 4,
+  "seeds": [
+    2001,
+    2002
+  ],
+  "results": {
+    "minus_cardinality": [
+      {
+        "seed": 2001,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 14787.743783,
+        "error": null,
+        "steps": 73
+      },
+      {
+        "seed": 2002,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 15,
+        "virtual_time_s": 16101.158589,
+        "error": null,
+        "steps": 96
+      }
+    ],
+    "nbv_greedy": [
+      {
+        "seed": 2001,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 14787.743783,
+        "error": null,
+        "steps": 73
+      },
+      {
+        "seed": 2002,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 15,
+        "virtual_time_s": 16101.158589,
+        "error": null,
+        "steps": 96
+      }
+    ],
+    "coverage_backbone_only": [
+      {
+        "seed": 2001,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 12833.967007,
+        "error": null,
+        "steps": 72
+      },
+      {
+        "seed": 2002,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 15,
+        "virtual_time_s": 16283.284439,
+        "error": null,
+        "steps": 108
+      }
+    ],
+    "routing_nearest": [
+      {
+        "seed": 2001,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 15177.893462,
+        "error": null,
+        "steps": 77
+      },
+      {
+        "seed": 2002,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 15,
+        "virtual_time_s": 15991.874337,
+        "error": null,
+        "steps": 99
+      }
+    ]
+  },
+  "selected_cells": [
+    "coverage_backbone_only",
+    "minus_cardinality",
+    "nbv_greedy",
+    "routing_nearest"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": true
+}

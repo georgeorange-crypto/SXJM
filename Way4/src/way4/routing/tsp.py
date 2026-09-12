@@ -180,3 +180,33 @@ def two_opt_open(
         if not improved:
             break
     return best, best_len
+
+
+def route_repair_open(order: Sequence[int], start_cost: Sequence[float],
+                      cost: Matrix, max_passes: int = 20) -> Tuple[List[int], float]:
+    """Apply 2-opt, relocate and swap until a local open-route minimum.
+
+    The operators are deterministic and cost-only; they never alter the task set,
+    so callers can use this as a safe geometric repair after discovery/clear events.
+    """
+    best, best_len = two_opt_open(order, start_cost, cost)
+    n = len(best)
+    for _ in range(max_passes):
+        improved = False
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    continue
+                cand = list(best); item = cand.pop(i); cand.insert(j, item)
+                value = _path_length(cand, start_cost, cost)
+                if value < best_len - 1e-9:
+                    best, best_len, improved = cand, value, True
+        for i in range(n):
+            for j in range(i + 1, n):
+                cand = list(best); cand[i], cand[j] = cand[j], cand[i]
+                value = _path_length(cand, start_cost, cost)
+                if value < best_len - 1e-9:
+                    best, best_len, improved = cand, value, True
+        if not improved:
+            break
+    return best, best_len
