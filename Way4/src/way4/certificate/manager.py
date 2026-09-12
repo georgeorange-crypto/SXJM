@@ -77,6 +77,7 @@ class CertificateManager:
         self,
         n_channels: int = 20,
         max_sources: int = 16,               # cardinality upper bound (line 27)
+        min_sources: int = 10,               # cardinality lower bound (§6.5; total ∈ [10,16])
         arena_radius: float = 1800.0,
         detection_radius: float = 1000.0,    # guaranteed R_eff lower bound (§6.1)
         coverage_spacing: float = 40.0,      # §6.6
@@ -94,6 +95,7 @@ class CertificateManager:
     ) -> None:
         self.n_channels = n_channels
         self.max_sources = max_sources
+        self.min_sources = min_sources
         self.anchor_reached_tol = anchor_reached_tol
         self.eager_hard_verify = eager_hard_verify
         self.eager_ratio_threshold = eager_ratio_threshold
@@ -136,7 +138,13 @@ class CertificateManager:
         cert = self.certs[channel]
         if obs.is_positive:
             cert.present = True
-            self._present.add(channel)     # Invariant D: only real positive obs counts
+            # Invariant D — the SOLE write path into ``_present``: a real positive
+            # observation. Nothing derived from a *counting* argument (e.g.
+            # ``forced_present_channels``' cardinality lower bound) may ever be added
+            # here, or the =16 pigeonhole would feed on a guess and could certify a
+            # real channel ABSENT (§6.10 危险放大器). ``mark_cleared`` is the only
+            # other writer, and only for a channel a deterministic hit confirmed.
+            self._present.add(channel)
             return
         if not obs.is_no_signal:
             return
@@ -222,6 +230,83 @@ class CertificateManager:
         if self.certs[channel].present:
             return False
         return len(self._present) >= self.max_sources
+
+    # -- cardinality LOWER bound (§6.5; planning-only, NEVER certifies) -----
+
+    def cardinality_bounds(self, belief: "BeliefState") -> Tuple[int, int, int, int]:
+        """Propagate the mission cardinality window ``T ∈ [min_sources, max_sources]``
+        into a bound on how many of the still-UNKNOWN channels must hold a source.
+
+        With ``p`` channels proven PRESENT (Invariant-D-pure ``_present``) and ``u``
+        channels still UNKNOWN — neither present nor certified absent, i.e. the *live
+        candidates* for a remaining source — the count ``k`` of sources hiding among
+        the unknowns satisfies ``T = p + k`` with ``T ∈ [min_sources, max_sources]``:
+
+            k ∈ [q_min, q_max],   q_min = max(0, min_sources − p),
+                                   q_max = min(u, max_sources − p).
+
+        ``belief`` MUST be this manager's companion (same run): ``p`` is read from
+        ``_present`` while ``u`` is read from ``belief.unknown_channels()``, so a
+        mismatched belief would desync the two counts and make ``forced_present``
+        over-eager. In-tree they stay consistent —
+        ``macro_executor._fold_observation`` updates belief and certificate from the
+        *same* observation atomically, and a present channel is DETECTED/LOCALIZED in
+        belief (never in ``unknown_channels()``).
+
+        Returns ``(p, u, q_min, q_max)``. PURE READ — touches neither ``_present``,
+        ``ChannelStatus`` nor any certificate. Recomputed from live counts each call,
+        so it is inherently non-sticky / reversible (a later positive obs that raises
+        ``p`` simply shifts the window on the next call)."""
+        p = len(self._present)
+        u = sum(1 for c in belief.unknown_channels() if c not in self._present)
+        q_min = max(0, self.min_sources - p)
+        # Clamp q_max at 0: if p already exceeds max_sources (an upstream invariant
+        # break) we return a benign degenerate window rather than a negative bound —
+        # fallback-to-Way3 posture over a crash. q_min > q_max then flags infeasible.
+        q_max = max(0, min(u, self.max_sources - p))
+        return p, u, q_min, q_max
+
+    def forced_present_channels(self, belief: "BeliefState") -> Set[int]:
+        """The UNKNOWN channels the cardinality LOWER bound proves MUST hold a source.
+
+        Fires only when ``q_min == u`` (equivalently ``p + u == min_sources`` while
+        ``p < min_sources``): the live candidates number exactly the minimum total,
+        so every remaining unknown is necessarily occupied and can be named
+        forced-present. Otherwise we know only "≥ q_min of the unknowns are occupied"
+        without knowing WHICH → the empty set (never name a specific channel on a
+        pure counting argument). The infeasible case ``q_min > u`` (some absence
+        over-certified upstream) also yields the empty set — safe, no crash.
+
+        PLANNING-ONLY, and deliberately kept OUT of the certificate machinery:
+          * never writes ``ChannelStatus`` — belief owns channel state (§4);
+          * never enters ``_present`` nor the cardinality COUNT. A forced-present that
+            fed the =16 pigeonhole would let a lower-bound *guess* certify a real
+            channel ABSENT — the §6.10 Invariant-D "危险放大器". This method only READS.
+        The planner consumes it to prefer INITIALIZE/search over futile absence
+        coverage on channels already proven occupied (P0-C consumer)."""
+        p, u, q_min, q_max = self.cardinality_bounds(belief)
+        if u > 0 and q_min == u:
+            return {c for c in belief.unknown_channels() if c not in self._present}
+        return set()
+
+    def cardinality_feasible(self, belief: "BeliefState") -> bool:
+        """False-absence detector (§6.10). Returns whether the cardinality window is
+        still satisfiable: ``q_min <= q_max``, equivalently ``p + u >= min_sources``.
+
+        The window goes infeasible (``p + u < min_sources``) ONLY when a channel that
+        truly holds a source was wrongly certified ABSENT — it left ``u`` without ever
+        entering ``_present``, so the live candidates can no longer reach the mission
+        minimum of ``min_sources``. That is precisely the §6.10 "危险放大器" catastrophe
+        the design fears most, and here it is a *free* detector: the counts already
+        exist. (A ``min_sources > max_sources`` misconfiguration would also trip this,
+        but that is a construction-time error, not a runtime false-absent.)
+
+        PURE READ, and deliberately a PREDICATE, not a raise: the certificate layer
+        keeps its "fallback-to-Way3 over crash" posture (禁令). The consumer chooses
+        the response — a loud assert in verification / tests, a soft warning in a
+        live run, but NEVER an action that could drop full-clear (§16 禁令10)."""
+        _p, _u, q_min, q_max = self.cardinality_bounds(belief)
+        return q_min <= q_max
 
     # -- combined queries (§6.4) -------------------------------------------
 

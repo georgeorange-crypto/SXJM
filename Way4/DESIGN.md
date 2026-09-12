@@ -160,6 +160,8 @@ would_definitely_detect(h=(p,φ,τ), S):   # 用保证下界 R_eff≥1000
 ### 6.5 三来源析取
 `is_absent_certified(c) = arbitrary_disc_cover_complete(c) ∨ legacy_backbone_complete(c) ∨ absent_by_cardinality(c)`。
 - **Cardinality**（line27 上限16）：`|{c: state(c)∈{PRESENT,CLEARED}}| = 16`（数**不同频道**；CLEARED 是 PRESENT 的后继态、不重复计） → 其余 UNKNOWN 直接 ABSENT_CERTIFIED（source=CARDINALITY，无需覆盖）；但这 16 个仍须**全部 CLEARED** 才能 exit（existence certificate 答「有没有」、clear certificate 答「清完没」，不可混）。可计入的 PRESENT 之合法性见 **Invariant D**（§6.10）。
+- **Cardinality 下界（P0-B，规划提示，非证书）**：题面 `T∈[10,16]`，不只有上界。设 `p=|present|`（Invariant-D 纯净计数）、`u=` 仍为候选的 UNKNOWN 频道数（既非 present 也未 certified absent），则隐藏于未知频道中的源数 `k=T−p∈[q_min,q_max]`，`q_min=max(0,10−p)`、`q_max=min(u,16−p)`。**仅当 `q_min==u`**（等价 `p+u==10` 且 `p<10`）：候选恰为最小总数，**每个** UNKNOWN 必有源 → 可点名 `forced_present`；否则只知「≥q_min 个未知频道有源」而不知是谁 → 空集（绝不凭纯计数点名具体频道）。**此为 planner 提示，不是第四个证书来源**：`forced_present` **永不**写 `ChannelStatus`、**永不**进 `_present` 或计入 =16 pigeonhole（否则下界*猜测*经 cardinality shortcut 误判真实频道 absent，即 §6.10 Invariant D「危险放大器」）；每次按实时 `p/u` 重算 = 天然非 sticky/可逆。消费：planner 对 `forced_present` 频道优先 INITIALIZE/搜索，跳过徒劳的 absence-coverage（P0-C）。`absent_by_cardinality` 仍只认上界 =16，两条路不交叉。
+  - **False-absent 检测器（`cardinality_feasible`，§6.10 免费护栏）**：同一对计数还给出可行性 `q_min≤q_max`（等价 `p+u≥10`）。窗口变不可行（`p+u<10`）**只可能**因某真实持源频道被**误判 ABSENT**——它离开 `u` 却从未进 `_present`，使候选再也凑不满最小总数 10，正是 §6.10 最惧的「危险放大器」灾难；此处零成本即可捕获。刻意做成**谓词而非抛异常**：证书层保持「回退 Way3 而非崩溃」姿态（禁令），由消费方选择响应——verification/测试中可 loud-assert，实跑中可软告警，但**绝不**触发任何可能降 full-clear 的动作（§16 禁令10）。纯读，不证书、不改状态。
 - **Legacy backbone**：走完 Way3 `omni_scan_points` 且 `verify_one_cover` 通过 → hard（保证可结束，Invariant C）。
 
 ### 6.6 CoverageGainMap（planner 用，40m）

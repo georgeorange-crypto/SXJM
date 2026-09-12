@@ -5,6 +5,7 @@ Invariant B: the heuristic map never certifies), cardinality purity (Invariant D
 the legacy backbone (Invariant C), and the planner-facing queries (§6.4/§6.7).
 """
 
+import copy
 import math
 
 from way4.belief import BeliefState, ChannelStatus
@@ -135,6 +136,147 @@ def test_cardinality_purity_requires_real_positive():
     assert mgr.present_count() == 15
     assert mgr.absent_by_cardinality(20) is False
     assert mgr.is_absent_certified(20) is False
+
+
+# --- cardinality LOWER bound (§6.5; P0-B, planning-only) -----------------------
+
+
+def _make_present(mgr, belief, channels):
+    """Confirm ``channels`` PRESENT in BOTH layers via a real positive observation."""
+    for c in channels:
+        belief[c].record_bearing((0.0, 0.0), 30.0)
+        mgr.record_observation(c, (0.0, 0.0), Observation.bearing(30.0))
+
+
+def test_cardinality_bounds_window():
+    """(p, u, q_min, q_max) with p present and u live-unknown, T ∈ [10, 16]."""
+    mgr = CertificateManager(n_channels=20, min_sources=10, max_sources=16)
+    belief = BeliefState(n_channels=20)
+    _make_present(mgr, belief, range(1, 7))              # p = 6
+    p, u, q_min, q_max = mgr.cardinality_bounds(belief)
+    assert p == 6
+    assert u == 14                                       # 20 - 6 still UNKNOWN
+    assert q_min == max(0, 10 - 6) == 4                  # ≥4 of the unknowns occupied
+    assert q_max == min(14, 16 - 6) == 10
+
+
+def test_forced_present_fires_only_when_qmin_equals_u():
+    """p=6 present, and exactly u=4 channels left as live candidates (the other 10
+    certified absent) -> q_min == u == 4 -> all four unknowns are forced-present."""
+    mgr = CertificateManager(n_channels=20, min_sources=10, max_sources=16)
+    belief = BeliefState(n_channels=20)
+    _make_present(mgr, belief, range(1, 7))              # channels 1..6 present
+    # certify channels 11..20 absent (full active cover), leaving 7,8,9,10 unknown
+    for c in range(11, 21):
+        _feed_no_signal(mgr, c, _grid(400.0, 2000.0))
+    mgr.apply_certifications(belief, force=True)
+    for c in range(11, 21):
+        assert belief[c].status is ChannelStatus.ABSENT_CERTIFIED
+
+    p, u, q_min, q_max = mgr.cardinality_bounds(belief)
+    assert (p, u, q_min) == (6, 4, 4)                    # q_min == u
+    forced = mgr.forced_present_channels(belief)
+    assert forced == {7, 8, 9, 10}
+
+
+def test_forced_present_empty_when_slack_remains():
+    """p=6, u=14 (nothing certified absent) -> q_min=4 < u -> we know ≥4 unknowns are
+    occupied but not WHICH -> forced set is empty (never name on a counting slack)."""
+    mgr = CertificateManager(n_channels=20, min_sources=10, max_sources=16)
+    belief = BeliefState(n_channels=20)
+    _make_present(mgr, belief, range(1, 7))
+    assert mgr.forced_present_channels(belief) == set()
+
+
+def test_forced_present_empty_at_or_above_min():
+    """p >= min_sources -> q_min = 0 -> no unknown is forced (the lower bound is
+    already satisfied by the present channels alone)."""
+    mgr = CertificateManager(n_channels=20, min_sources=10, max_sources=16)
+    belief = BeliefState(n_channels=20)
+    _make_present(mgr, belief, range(1, 13))             # p = 12 >= 10
+    _p, _u, q_min, _q_max = mgr.cardinality_bounds(belief)
+    assert q_min == 0
+    assert mgr.forced_present_channels(belief) == set()
+
+
+def test_forced_present_never_pollutes_present_or_pigeonhole():
+    """The §6.10 guard: forced-present is a PLANNING hint only. Computing it must not
+    add anything to ``_present`` nor let the =16 pigeonhole fire on a lower-bound
+    guess (that would certify a real channel ABSENT — the danger amplifier)."""
+    mgr = CertificateManager(n_channels=20, min_sources=10, max_sources=16)
+    belief = BeliefState(n_channels=20)
+    _make_present(mgr, belief, range(1, 7))              # p = 6
+    for c in range(11, 21):
+        _feed_no_signal(mgr, c, _grid(400.0, 2000.0))
+    mgr.apply_certifications(belief, force=True)
+
+    # True no-mutation guard: snapshot the manager's entire mutable certificate state
+    # before the read-only queries and require it byte-identical afterwards. This
+    # exercises the actual "computing forced-present mutates nothing" contract, rather
+    # than leaning on the =16 pigeonhole check below (which is vacuous at p=6, since
+    # the pigeonhole needs len(_present) >= 16 and forced-present can never push
+    # _present past 10 anyway).
+    before_present = set(mgr._present)
+    before_cleared = set(mgr._cleared)
+    before_certs = copy.deepcopy(mgr.certs)
+
+    forced = mgr.forced_present_channels(belief)
+    _ = mgr.cardinality_bounds(belief)
+    _ = mgr.cardinality_feasible(belief)
+
+    assert mgr._present == before_present
+    assert mgr._cleared == before_cleared
+    assert mgr.certs == before_certs
+
+    assert forced == {7, 8, 9, 10}
+    # purity: _present is still exactly the 6 real positives, not 6 + 4 forced
+    assert mgr.present_count() == 6
+    assert set(mgr.present_channels()) == set(range(1, 7))
+    # and the pigeonhole must NOT treat a forced channel as present -> no false absent
+    for c in forced:
+        assert mgr.absent_by_cardinality(c) is False
+        assert mgr.is_absent_certified(c) is False
+        assert belief[c].status is ChannelStatus.UNKNOWN
+
+
+def test_forced_present_survives_infeasible_window_without_crash():
+    """If upstream over-certifies absence so that q_min would exceed u, the method
+    returns empty (fallback posture) rather than raising."""
+    mgr = CertificateManager(n_channels=12, min_sources=10, max_sources=16)
+    belief = BeliefState(n_channels=12)
+    _make_present(mgr, belief, range(1, 3))              # p = 2
+    # certify 9 of the remaining 10 absent -> u = 1, but q_min = 8 > u
+    for c in range(4, 13):
+        _feed_no_signal(mgr, c, _grid(400.0, 2000.0))
+    mgr.apply_certifications(belief, force=True)
+    p, u, q_min, _q_max = mgr.cardinality_bounds(belief)
+    assert q_min > u                                     # infeasible-looking window
+    assert mgr.forced_present_channels(belief) == set()  # empty, no exception
+
+
+def test_cardinality_feasible_detects_false_absence():
+    """``cardinality_feasible`` is the §6.10 false-absent detector: the window stays
+    satisfiable (True) as long as the live candidates can still reach min_sources,
+    and goes False exactly when p + u < min_sources — reachable ONLY by a wrong
+    ABSENT certification (a truly-present channel dropped from the count)."""
+    # Healthy: p=2, u=10 -> p+u=12 >= 10 -> feasible even though few are present yet.
+    mgr = CertificateManager(n_channels=12, min_sources=10, max_sources=16)
+    belief = BeliefState(n_channels=12)
+    _make_present(mgr, belief, range(1, 3))              # p = 2, u = 10
+    assert mgr.cardinality_feasible(belief) is True
+    # exactly at the boundary p + u == min_sources is still feasible (q_min == q_max path)
+    _p, _u, q_min, q_max = mgr.cardinality_bounds(belief)
+    assert q_min <= q_max
+
+    # Now over-certify absence so only 1 unknown remains: p=2, u=1 -> p+u=3 < 10.
+    for c in range(4, 13):                               # certify 9 channels absent
+        _feed_no_signal(mgr, c, _grid(400.0, 2000.0))
+    mgr.apply_certifications(belief, force=True)
+    p, u, _q_min, _q_max = mgr.cardinality_bounds(belief)
+    assert p + u < mgr.min_sources                       # window can no longer be filled
+    assert mgr.cardinality_feasible(belief) is False     # -> a false absence is flagged
+    # detector is a PURE READ predicate — it certifies nothing and raises nothing
+    assert belief[4].status is ChannelStatus.ABSENT_CERTIFIED
 
 
 # --- apply_certifications marks belief absent (禁止6: only the manager) --------
