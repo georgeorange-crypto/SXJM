@@ -178,7 +178,15 @@ class ChannelScheduler:
         poly = channel_belief.F_c
         if not poly or channel_belief.mec_center is None or not channel_belief.bearings:
             return 0.0
-        m = polygon_centroid(poly)
+        # Planner geometry follows the effective set (NO_SIGNAL exclusions),
+        # while the safety outer polygon remains authoritative for certificates.
+        sampler = getattr(channel_belief, "sample_effective_hypotheses", None)
+        samples = sampler(limit=32, spacing=60.0) if sampler else []
+        m = (
+            (sum(p[0] for p in samples) / len(samples),
+             sum(p[1] for p in samples) / len(samples))
+            if samples else polygon_centroid(poly)
+        )
         if dist(q, m) > self.range_radius:
             return 0.0
         new_los = bearing_deg(q, m)
