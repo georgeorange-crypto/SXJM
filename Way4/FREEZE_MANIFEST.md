@@ -29,4 +29,4 @@
 - 已有完整回归记录：`193 passed, 12 skipped`。
 - 后续新增功能必须以 targeted regression + 完整回归重新验收。
 - 本文件不是性能结果，也不宣称 full-clear、large-seed 或论文级统计已经完成。
-- 当前 Git freeze commit 为 `8f09be4`；`scripts/freeze_fingerprint.py` 生成的 `results/way4_source_fingerprint.json` 提供当前 `src/`、`tests/`、`DESIGN.md` 和本 manifest 的逐文件 SHA-256 与 tree fingerprint。该 fingerprint 是可复现快照证据。
+- 当前 Git freeze commit 为 `25f9020`；`scripts/freeze_fingerprint.py` 生成的 `results/way4_source_fingerprint.json` 提供当前 `src/`、`tests/`、`DESIGN.md` 和本 manifest 的逐文件 SHA-256 与 tree fingerprint。该 fingerprint 是可复现快照证据。

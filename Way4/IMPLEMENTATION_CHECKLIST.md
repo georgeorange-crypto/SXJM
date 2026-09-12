@@ -14,7 +14,7 @@
 
 | 状态 | ID | 证据与结论 |
 |---|---|---|
-| [x] | P0-000 | 已创建 Git freeze commits `399d6ad` 与 `8f09be4`；`FREEZE_MANIFEST.md` 与 `results/way4_source_fingerprint.json` 记录权威源码根、环境、逐文件 SHA-256 和 tree fingerprint。 |
+| [x] | P0-000 | 已创建 Git freeze commits `399d6ad`、`8f09be4`、`25f9020`；`FREEZE_MANIFEST.md` 与 `results/way4_source_fingerprint.json` 记录权威源码根、环境、逐文件 SHA-256 和 tree fingerprint。 |
 | [~] | P0-001 | 已有统一 effective 查询、`EffectiveRegion`、保守栅格面积/直径/采样，并新增 40×8 随机合法观测 soundness property test；仍需把所有 NBV/coverage 调用完全收敛到该接口。 |
 | [x] | P0-002 | `record_no_signal()` 立即更新 exclusion；NBV/native hypothesis sampling 使用 effective samples，安全几何仍明确使用 outer `F_c`，避免把近似域误作 certificate。 |
 | [x] | P0-003 | 已新增 `EffectiveRegion` 显式保守栅格表示，支持 holes/multiplicity 的连通分量统计，并与安全 outer `F_c` 分层。 |
