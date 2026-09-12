@@ -21,6 +21,7 @@ from .receding_horizon import (
     PlanResult,
     RecedingHorizonPlanner,
 )
+from .spatial import SpatialStopGenerator
 
 __all__ = [
     "CandidateGenerator",
@@ -34,4 +35,5 @@ __all__ = [
     "OutcomePredictor",
     "PlanResult",
     "RecedingHorizonPlanner",
+    "SpatialStopGenerator",
 ]

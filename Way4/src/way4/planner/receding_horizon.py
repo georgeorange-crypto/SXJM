@@ -92,7 +92,30 @@ class OutcomePredictor:
             return [Outcome("exit", 1.0, base.copy())]
         if at == MacroActionType.CLEAR:
             return [Outcome("hit", 1.0, self._after_clear(candidate, base))]
+        if at == MacroActionType.STOP:
+            # P0 #2/#3 spatial bundle: a location-first visit that does a batch scan
+            # AND any folded clears in one stop. Its effect on the remaining-work view
+            # is the union of what its parts would do — nominally (the batch covers its
+            # neighbourhood, the folded clears remove their targets). Deterministic like
+            # CLEAR: this only ranks the bundle; correctness stays the guards' job.
+            return [Outcome("stop", 1.0, self._after_stop(candidate, base))]
         return self._after_scan(candidate, belief, base)
+
+    # -- STOP (spatial bundle) ---------------------------------------------
+
+    def _after_stop(self, candidate: MacroCandidate, base: CostView) -> CostView:
+        v = base.copy()
+        q = (float(candidate.target[0]), float(candidate.target[1]))
+        v.pos = q
+        if candidate.scan_channels:
+            # the batch covers the neighbourhood around q (as a NO_SIGNAL scan would)
+            v.unknown_holes = [h for h in v.unknown_holes if dist(h, q) > self.detection_radius]
+            if candidate.refinement_gain > 0 and v.detected:
+                v.detected = self._shrink_one(v.detected, q, float(candidate.refinement_gain))
+        # each folded clear removes its own clearable target (as CLEAR would)
+        for tgt in getattr(candidate, "clear_targets", ()):
+            v.clearable_targets = _remove_nearest(v.clearable_targets, tgt)
+        return v
 
     # -- CLEAR --------------------------------------------------------------
 

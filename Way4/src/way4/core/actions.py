@@ -21,7 +21,9 @@ from sxjm_core.geometry import Point
 
 
 class MacroActionType(str, Enum):
-    """The seven macro intents (DESIGN.md §7)."""
+    """The macro intents (DESIGN.md §7). ``STOP`` is additive — the P0 spatial
+    planner's location-first bundle (see ``SpatialStop``); it is never produced by the
+    frozen action-centric generator, so the legacy path is unchanged."""
 
     EXPLORE = "EXPLORE"        # broad discovery / coverage batch scan
     INITIALIZE = "INITIALIZE"  # first bearing on a freshly-detected channel
@@ -30,6 +32,7 @@ class MacroActionType(str, Enum):
     CLEAR = "CLEAR"            # blind-clear at the MEC centre (§3.3)
     VERIFY = "VERIFY"          # completion waypoint, batch only uncertified UNKNOWNs (§6.7)
     EXIT = "EXIT"              # leave (guarded by the EXIT certificate, §11)
+    STOP = "STOP"              # P0 spatial planner: a location-first multi-service bundle
 
 
 class PrimitiveKind(str, Enum):
@@ -86,3 +89,43 @@ class MacroCandidate:
     @property
     def is_scan(self) -> bool:
         return self.action_type not in (MacroActionType.CLEAR, MacroActionType.EXIT)
+
+
+@dataclass
+class SpatialStop(MacroCandidate):
+    """A location-first *service bundle* (P0 #2/#3 — the spatial planner's basic object).
+
+    Where a ``MacroCandidate`` is action-centric (one action at one target), a
+    ``SpatialStop`` is space-centric: a neighbourhood at which the robot completes a
+    whole *set* of services in one visit — a batch of MEASUREs (``scan_channels``, at
+    ``target``) plus any CLEARs whose blind-clear point (§3.3) falls in that
+    neighbourhood. It subclasses ``MacroCandidate`` so it flows through the planner,
+    executor and pipeline unchanged (they duck-type on ``primitives()`` /
+    ``action_type`` / ``expected_time``); ``action_type`` is always ``STOP``, so the
+    frozen ``MacroCandidate.primitives()`` (all-MEASURE-or-single-CLEAR) is never used
+    and the legacy path stays byte-identical.
+
+    ``clear_channels[i]`` is cleared at ``clear_targets[i]`` (parallel tuples). A stop
+    may be pure-scan (no clears), pure-clear (no measures), or a genuine bundle — the
+    mixed MEASURE+CLEAR expansion the action-centric candidate could not express. This
+    object only *describes* work; when to route to it stays the planner's job and the
+    clear guard / EXIT guard are untouched (禁止6/7)."""
+
+    clear_channels: Tuple[int, ...] = ()
+    clear_targets: Tuple[Point, ...] = ()
+
+    def primitives(self) -> List[Primitive]:
+        """Expand to env commands: MEASURE the whole batch at ``target`` first (§7 batch
+        scan — the first pays the move, the rest only switch + detect), then CLEAR each
+        bundled source at its own blind-clear point. Measures precede clears so a stop
+        senses its neighbourhood before acting on it."""
+        prims: List[Primitive] = [
+            Primitive(PrimitiveKind.MEASURE, self.target, int(c)) for c in self.scan_channels
+        ]
+        for ch, tgt in zip(self.clear_channels, self.clear_targets):
+            prims.append(Primitive(PrimitiveKind.CLEAR, tgt, int(ch)))
+        return prims
+
+    @property
+    def n_services(self) -> int:
+        return len(self.scan_channels) + len(self.clear_channels)

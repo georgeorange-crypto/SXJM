@@ -11,6 +11,7 @@ from .actions import (
     MacroCandidate,
     Primitive,
     PrimitiveKind,
+    SpatialStop,
 )
 from .cost import AnalyticalCostModel, RobotState
 
@@ -21,6 +22,7 @@ __all__ = [
     "MacroCandidate",
     "Primitive",
     "PrimitiveKind",
+    "SpatialStop",
     "AnalyticalCostModel",
     "RobotState",
 ]
