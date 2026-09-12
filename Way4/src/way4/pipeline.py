@@ -41,6 +41,13 @@ from .certificate import CertificateManager
 from .channels import ChannelScheduler, SchedulerMode
 from .core import AnalyticalCostModel, MacroActionType, MacroCandidate, RobotState
 from .executor import MacroExecutor
+from .metrics import (
+    ROLE_CLEAR,
+    ROLE_COVERAGE,
+    ROLE_LOCALIZE,
+    RouteEvent,
+    compute_route_metrics,
+)
 from .planner import CandidateGenerator, RecedingHorizonPlanner
 
 
@@ -64,6 +71,21 @@ class EpisodeResult:
     exited: bool                     # EXIT executed (vs deadline / step cap)
     hit_deadline: bool               # env signalled finish before EXIT
     error: Optional[str] = None      # exception text if the loop aborted
+
+    # -- route decomposition diagnostics (P0 #9) -----------------------------
+    # Pure-additive: computed from the realised primitive sequence, drives nothing
+    # (no gate/belief/certificate reads these), so they cannot affect full_clear.
+    # They exist to quantify the action-centric planner's routing waste and give the
+    # #10 ablation an apples-to-apples baseline against the future spatial planner.
+    # See way4.metrics.compute_route_metrics for definitions.
+    services_per_stop: float = 0.0
+    pure_refine_travel: float = 0.0
+    certificate_only_travel: float = 0.0
+    revisit_distance: float = 0.0
+    shared_stop_ratio: float = 0.0
+    clear_insertion_delta: float = 0.0
+    route_n_stops: int = 0
+    route_n_services: int = 0
 
     @property
     def full_clear(self) -> bool:
@@ -117,6 +139,8 @@ class Way4Pipeline:
         self._n_clear = 0
         self._n_clear_hit = 0
         self._steps = 0
+        self._route_events: List[RouteEvent] = []          # P0 #9 diagnostics
+        self._start_pos = (float(self.state.x), float(self.state.y))
         # no-progress guard state
         self._last_progress_key: Optional[Tuple] = None
         self._stall = 0
@@ -146,8 +170,13 @@ class Way4Pipeline:
                     break
 
                 # Execute one macro; fold observations back into belief+certificate.
+                # Snapshot belief status BEFORE execution so route roles reflect the
+                # macro's intent, not the post-macro state (diagnostics only, §P0-9).
+                status_before = {
+                    c: self.belief[c].status for c in range(1, self.n_channels + 1)
+                }
                 res = self.executor.execute(macro, self.state, self.time_budget_s)
-                self._account(macro, res)
+                self._account(macro, res, status_before)
                 self.state = res.state
                 self._steps += 1
 
@@ -258,10 +287,12 @@ class Way4Pipeline:
 
     # -- metrics ------------------------------------------------------------
 
-    def _account(self, macro: MacroCandidate, res) -> None:
+    def _account(self, macro: MacroCandidate, res, status_before=None) -> None:
         # Reconstruct travelled distance + primitive counts from the realised
         # primitive sequence (the env clock is authoritative for time; this is only
         # for the metric row). Walk the primitives in order from the pre-macro pose.
+        # Also record a RouteEvent per primitive for the P0 #9 route decomposition
+        # (way4.metrics) — pure bookkeeping, drives nothing.
         walk = (self.state.x, self.state.y)
         chan = self.state.channel
         for pr in res.primitives:
@@ -274,11 +305,31 @@ class Way4Pipeline:
                 if int(prim.channel) != int(chan):
                     self._n_switch += 1
                     chan = int(prim.channel)
+                self._route_events.append(RouteEvent(
+                    loc=tgt, kind="MEASURE", channel=int(prim.channel),
+                    role=self._measure_role(int(prim.channel), status_before),
+                ))
             elif prim.kind.name == "CLEAR":
                 self._n_clear += 1
                 if pr.cleared:
                     self._n_clear_hit += 1
                 # /clear does NOT change measuring channel (§1.1)
+                self._route_events.append(RouteEvent(
+                    loc=tgt, kind="CLEAR", channel=int(prim.channel),
+                    role=ROLE_CLEAR, cleared=bool(pr.cleared),
+                ))
+
+    def _measure_role(self, channel: int, status_before) -> str:
+        """Planner-agnostic role of a MEASURE for the route decomposition: a known
+        source at macro start (DETECTED/LOCALIZED) -> localization, else coverage.
+        Reads the pre-macro belief snapshot so the role reflects intent; drives
+        nothing (Invariant B untouched — this never marks or certifies anything)."""
+        st = status_before.get(channel) if status_before is not None else None
+        if st is None:
+            st = self.belief[channel].status
+        if st in (ChannelStatus.DETECTED, ChannelStatus.LOCALIZED):
+            return ROLE_LOCALIZE
+        return ROLE_COVERAGE
 
     def _result(self, exited: bool, hit_deadline: bool, error: Optional[str]) -> EpisodeResult:
         # final reconciliation so resolved-count reflects all certifiable channels
@@ -295,6 +346,7 @@ class Way4Pipeline:
             1 for c in range(1, self.n_channels + 1) if self.belief[c].is_resolved
         )
         success = exited and resolved == self.n_channels and error is None
+        rm = compute_route_metrics(self._route_events, self._start_pos)
         return EpisodeResult(
             success=success,
             virtual_time_s=self.state.virtual_time_s,
@@ -311,6 +363,14 @@ class Way4Pipeline:
             exited=exited,
             hit_deadline=hit_deadline,
             error=error,
+            services_per_stop=rm.services_per_stop,
+            pure_refine_travel=rm.pure_refine_travel,
+            certificate_only_travel=rm.certificate_only_travel,
+            revisit_distance=rm.revisit_distance,
+            shared_stop_ratio=rm.shared_stop_ratio,
+            clear_insertion_delta=rm.clear_insertion_delta,
+            route_n_stops=rm.n_stops,
+            route_n_services=rm.n_services,
         )
 
 
