@@ -1,0 +1,62 @@
+== Way3 vs Way4  |  problem=3  n=50  field=smooth  seeds=[1000..1049] ==
+
+  seed= 1000 tot=16 way3[clr=16 OK t= 6442.8] way4[clr=16 OK t= 5554.1 steps=31]
+  seed= 1001 tot=16 way3[clr=16 OK t= 5727.0] way4[clr=16 OK t= 5322.1 steps=32]
+  seed= 1002 tot=14 way3[clr=14 OK t= 4436.2] way4[clr=14 OK t= 4415.7 steps=28]
+  seed= 1003 tot=13 way3[clr=13 OK t= 4917.7] way4[clr=13 OK t= 4797.0 steps=25]
+  seed= 1004 tot=13 way3[clr=13 OK t= 4522.7] way4[clr=13 OK t= 5290.2 steps=27]
+  seed= 1005 tot=13 way3[clr=13 OK t= 5201.3] way4[clr=13 OK t= 5888.3 steps=30]
+  seed= 1006 tot=12 way3[clr=12 OK t= 5640.2] way4[clr=12 OK t= 4984.9 steps=30]
+  seed= 1007 tot=16 way3[clr=16 OK t= 5143.9] way4[clr=16 OK t= 4514.0 steps=33]
+  seed= 1008 tot=14 way3[clr=14 OK t= 5219.3] way4[clr=14 OK t= 4448.9 steps=27]
+  seed= 1009 tot=11 way3[clr=11 OK t= 4555.5] way4[clr=11 OK t= 4624.2 steps=26]
+  seed= 1010 tot=15 way3[clr=15 OK t= 6573.6] way4[clr=15 OK t= 4834.0 steps=28]
+  seed= 1011 tot=12 way3[clr=12 OK t= 4763.7] way4[clr=12 OK t= 4319.8 steps=24]
+  seed= 1012 tot=12 way3[clr=12 OK t= 5686.9] way4[clr=12 OK t= 4148.8 steps=26]
+  seed= 1013 tot=13 way3[clr=13 OK t= 4269.7] way4[clr=13 OK t= 5154.5 steps=27]
+  seed= 1014 tot=14 way3[clr=14 OK t= 5029.1] way4[clr=14 OK t= 5049.3 steps=30]
+  seed= 1015 tot=10 way3[clr=10 OK t= 5065.0] way4[clr=10 OK t= 4998.1 steps=24]
+  seed= 1016 tot=12 way3[clr=12 OK t= 4295.1] way4[clr=12 OK t= 4501.6 steps=25]
+  seed= 1017 tot=13 way3[clr=13 OK t= 4583.3] way4[clr=13 OK t= 5156.9 steps=30]
+  seed= 1018 tot=13 way3[clr=13 OK t= 4725.0] way4[clr=13 OK t= 5856.3 steps=30]
+  seed= 1019 tot=10 way3[clr=10 OK t= 4530.7] way4[clr=10 OK t= 6260.5 steps=28]
+  seed= 1020 tot=10 way3[clr=10 OK t= 4100.9] way4[clr=10 OK t= 4300.6 steps=22]
+  seed= 1021 tot=14 way3[clr=14 OK t= 6251.2] way4[clr=14 OK t= 4986.8 steps=28]
+  seed= 1022 tot=11 way3[clr=11 OK t= 5539.2] way4[clr=11 OK t= 5100.8 steps=26]
+  seed= 1023 tot=13 way3[clr=13 OK t= 5942.3] way4[clr=13 OK t= 4843.0 steps=27]
+  seed= 1024 tot=16 way3[clr=16 OK t= 5324.2] way4[clr=16 OK t= 4151.4 steps=27]
+  seed= 1025 tot=11 way3[clr=11 OK t= 5008.0] way4[clr=11 OK t= 4049.3 steps=22]
+  seed= 1026 tot=10 way3[clr=10 OK t= 5034.2] way4[clr=10 OK t= 3426.7 steps=22]
+  seed= 1027 tot=10 way3[clr=10 OK t= 4824.2] way4[clr=10 OK t= 5202.8 steps=23]
+  seed= 1028 tot=13 way3[clr=13 OK t= 5006.0] way4[clr=13 OK t= 5665.7 steps=32]
+  seed= 1029 tot=14 way3[clr=14 OK t= 5474.3] way4[clr=14 OK t= 6176.5 steps=33]
+  seed= 1030 tot=10 way3[clr=10 OK t= 4988.3] way4[clr=10 OK t= 4899.2 steps=24]
+  seed= 1031 tot=15 way3[clr=15 OK t= 4663.0] way4[clr=15 OK t= 4172.7 steps=28]
+  seed= 1032 tot=13 way3[clr=13 OK t= 4674.0] way4[clr=13 OK t= 4358.8 steps=26]
+  seed= 1033 tot=15 way3[clr=15 OK t= 4997.4] way4[clr=15 OK t= 3934.1 steps=23]
+  seed= 1034 tot=16 way3[clr=16 OK t= 5541.6] way4[clr=16 OK t= 4804.4 steps=27]
+  seed= 1035 tot=16 way3[clr=16 OK t= 5189.7] way4[clr=16 OK t= 4568.3 steps=29]
+  seed= 1036 tot=13 way3[clr=13 OK t= 5130.8] way4[clr=13 OK t= 5166.1 steps=29]
+  seed= 1037 tot=10 way3[clr=10 OK t= 4941.3] way4[clr=10 OK t= 4763.8 steps=24]
+  seed= 1038 tot=10 way3[clr=10 OK t= 4175.3] way4[clr=10 OK t= 3854.8 steps=21]
+  seed= 1039 tot=15 way3[clr=15 OK t= 5467.8] way4[clr=15 OK t= 5506.0 steps=33]
+  seed= 1040 tot=12 way3[clr=12 OK t= 5331.7] way4[clr=12 OK t= 4869.6 steps=27]
+  seed= 1041 tot=13 way3[clr=13 OK t= 6368.3] way4[clr=13 OK t= 5796.5 steps=31]
+  seed= 1042 tot=11 way3[clr=11 OK t= 4879.1] way4[clr=11 OK t= 5042.5 steps=25]
+  seed= 1043 tot=14 way3[clr=14 OK t= 5919.4] way4[clr=14 OK t= 4933.7 steps=31]
+  seed= 1044 tot=16 way3[clr=16 OK t= 4714.4] way4[clr=16 OK t= 3922.8 steps=26]
+  seed= 1045 tot=15 way3[clr=15 OK t= 4892.1] way4[clr=15 OK t= 5097.3 steps=30]
+  seed= 1046 tot=13 way3[clr=13 OK t= 5415.2] way4[clr=13 OK t= 4557.5 steps=28]
+  seed= 1047 tot=10 way3[clr=10 OK t= 5085.7] way4[clr=10 OK t= 4364.1 steps=24]
+  seed= 1048 tot=12 way3[clr=12 OK t= 6962.6] way4[clr=12 OK t= 4932.0 steps=24]
+  seed= 1049 tot=15 way3[clr=15 OK t= 4878.4] way4[clr=15 OK t= 4232.3 steps=27]
+
+-- summary --
+  way3  | full-clear 100.00% (50/50)  errors=0  | t_success mean/P50/P90/max =  5161.0/ 5031.6/ 5973.2/ 6962.6 s
+  way4  | full-clear 100.00% (50/50)  errors=0  | t_success mean/P50/P90/max =  4836.0/ 4856.3/ 5678.8/ 6260.5 s
+
+-- both-cleared (50 episodes) mean virtual time --
+  way3   5161.0 s   way4   4836.0 s   ratio way4/way3 = 0.937
+
+-- M7 acceptance gate (禁止10: Way4 full-clear >= Way3 full-clear) --
+  Way3=100.00%  Way4=100.00%  => PASS

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import torch
 
@@ -102,8 +102,19 @@ def evaluate(pipe: Pipeline, agent: PPOAgent, episodes: int, max_steps: int,
     }
 
 
-def train(cfg: Any, progress: bool = False) -> TrainResult:
-    """Train a PPO agent from a composed config (``cfg``). Returns the agent."""
+def train(
+    cfg: Any,
+    progress: bool = False,
+    iter_callback: Optional[Callable[[int, Pipeline, PPOAgent, dict], None]] = None,
+) -> TrainResult:
+    """Train a PPO agent from a composed config (``cfg``). Returns the agent.
+
+    ``iter_callback(it, pipe, agent, rec)`` runs after each iteration's update,
+    before the next rollout, with the live pipeline/agent (weights just updated)
+    and that iteration's training record. It is the hook the sweep uses for
+    periodic validation and best-by-validation checkpointing without duplicating
+    this loop; ``None`` (the default) leaves training behaviour unchanged.
+    """
     algo = _node(cfg, "algorithm")
     tc = TrainConfig.from_cfg(_node(algo, "train"))
     pc = PPOConfig.from_cfg(_node(algo, "ppo"))
@@ -151,6 +162,9 @@ def train(cfg: Any, progress: bool = False) -> TrainResult:
         if tc.eval_every and (it + 1) % tc.eval_every == 0:
             rec.update(evaluate(pipe, agent, tc.eval_episodes, tc.max_steps))
         history.append(rec)
+
+        if iter_callback is not None:
+            iter_callback(it, pipe, agent, rec)
 
         if progress and tc.log_every and (it % tc.log_every == 0):
             print(

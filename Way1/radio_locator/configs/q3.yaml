@@ -1,0 +1,22 @@
+# 问题 3（全部全向源）专用参数。仅影响效率与数值精度，不影响正确性。
+
+q3_coverage:
+  safe_receive_radius: 980.0  # 覆盖用保守接收半径 (m)，<1000 留裕量
+  outer_points: 6             # 外环等角点数（sin(π/m)<=5/9 ⇒ m>=6）
+  ring_radius: null           # null=按公式自动求解；也可显式指定 (m)
+
+quadtree:
+  initial_cell_size: 200.0    # 初始网格 (m)
+  coarse_resolution: 10.0     # 远离清除时的粗精度 (m)
+  fine_resolution: 0.5        # 逼近清除时的细精度 (m)
+  refine_below_mec_radius: 50.0  # MEC 半径 < 该值后才细化到亚米级
+  max_depth: 16
+
+planner:
+  horizon: 1                  # one-step robust lookahead（可扩到 2-3）
+  max_localization_candidates: 48
+  lookahead_lambda: 1.0       # J_λ 中不确定度项权重
+  held_karp_max_targets: 16   # 目标数 <= 该值用精确 open-TSP
+
+localization:
+  clear_mec_radius: 19.0

@@ -1,0 +1,35 @@
+# 题目硬约束与机器人/无线电常量（对齐 附件2）。
+# 这些是题目明确给出的数值，不得当作可调超参随意改动。
+
+problem:
+  area_radius: 1800.0        # 目标区域半径 (m)
+  channels: 20               # 频道数 1..20
+  source_count_min: 10       # 干扰源总数下界
+  source_count_max: 16       # 干扰源总数上界
+
+radio:
+  bearing_error_deg: 1.0     # 示向度误差界 |e| <= 1°（有界、按地点固定）
+  receive_radius_min: 1000.0 # 有效接收半径下界 (m)
+  receive_radius_max: 1500.0 # 有效接收半径上界 (m)
+  directional_half_angle_deg: 90.0  # 定向源覆盖角半张角（共 180°）
+
+robot:
+  speed: 5.0                 # 移动速度 m/s
+  switch_time: 1.0           # 切换频道耗时 s
+  detection_time: 5.0        # /measure 动作耗时 s
+  clear_hit_time: 5.0        # /clear 成功耗时 s（精定位+清除）
+  clear_miss_time: 3.0       # /clear 未发现耗时 s（仅精定位）
+  optical_radius: 20.0       # 清除半径 (m)：<=20 即可清除
+  too_strong_radius: 5.0     # 近距离阈值 (m)：<=5 且在覆盖角 → near
+
+localization:
+  # 清除停止判据：MEC 半径 <= 该值即可保证移动到圆心后目标进入 20m 光学范围。
+  # 取 19（<20）留 1m 数值裕量。
+  clear_mec_radius: 19.0
+  radius_delete_margin: 0.001  # box 删除时的半径裕量 δ_R (m)，防止 endpoint 误删
+
+runtime:
+  arena_id: "default"
+  robot_id: "way1-team"
+  base_url: "http://127.0.0.1:2026"
+  request_timeout_s: 5.0

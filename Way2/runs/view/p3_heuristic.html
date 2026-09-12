@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>干扰源定位清除 · 运行可视化 (P3, seed=7)</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6edf3; --muted: #8b949e;
+    --line: #30363d; --accent: #58a6ff; --grey: #6e7681;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  header { padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+  .wrap { display: flex; gap: 16px; padding: 16px; flex-wrap: wrap; }
+  .stage { flex: 1 1 620px; min-width: 320px; }
+  canvas { width: 100%; height: auto; background: #0a0d12;
+           border: 1px solid var(--line); border-radius: 8px; display: block; }
+  .side { flex: 0 0 300px; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line);
+          border-radius: 8px; padding: 12px 14px; }
+  .card h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: .04em;
+             text-transform: uppercase; color: var(--muted); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 2px; }
+  select, button {
+    background: #21262d; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+  }
+  select { width: 100%; }
+  .controls { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  input[type=range] { width: 100%; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td { padding: 3px 0; }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; color: #fff; }
+  .legend { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+  .legend .row { display: flex; align-items: center; gap: 8px; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+  .sw.fan { background: linear-gradient(90deg,#58a6ff88,#58a6ff11); }
+  .sw.route { background: none; border-top: 3px solid #f0883e; height: 0; border-radius: 0; }
+  .sw.grey { background: var(--grey); border-radius: 50%; }
+  .sw.cleared { background: #3fb950; border-radius: 50%; }
+  .sw.near { background: #f85149; border-radius: 50%; }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .frameinfo { font-variant-numeric: tabular-nums; }
+  code { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>干扰源定位清除 · 运行可视化 (P3, seed=7)</h1>
+  <p>灰色 = 未被发现的干扰源 · 彩色扇形 = 机器狗探测痕迹（示向度 ±1°）· 橙线 = 前进路线 · ✕/绿点 = 已清除</p>
+</header>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="cv" width="900" height="900"></canvas>
+    <div class="controls">
+      <button id="play">▶ 播放</button>
+      <input id="slider" type="range" min="0" max="0" value="0" step="1">
+    </div>
+    <div class="hint frameinfo" id="frameinfo"></div>
+  </div>
+  <div class="side">
+    <div class="card">
+      <h2>算法</h2>
+      <select id="algo"></select>
+      <label>叠加对比</label>
+      <div class="controls">
+        <label style="margin:0"><input type="checkbox" id="ghost"> 显示其它算法路线（淡）</label>
+      </div>
+    </div>
+    <div class="card">
+      <h2>本局统计</h2>
+      <table id="stats"></table>
+    </div>
+    <div class="card">
+      <h2>图例</h2>
+      <div class="legend">
+        <div class="row"><span class="sw grey"></span>未发现的干扰源（真值）</div>
+        <div class="row"><span class="sw cleared"></span>已清除的干扰源</div>
+        <div class="row"><span class="sw fan"></span>探测扇形（有示向度）</div>
+        <div class="row"><span class="sw near"></span>近距离 / 无示向度检测</div>
+        <div class="row"><span class="sw route"></span>机器狗前进路线</div>
+      </div>
+      <div class="hint">扇形从检测点沿示向度方向张开 ±1°，长度截到有效可视范围。定向源画出 180° 覆盖扇区。</div>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="data">{"runs":[{"label":"heuristic","problem":3,"seed":7,"arena_radius":1800.0,"bearing_error_deg":1.0,"frames":[{"type":"scan","channel":1,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"no_signal","vt":5.0,"n_candidates":32},{"type":"scan","channel":2,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"signal","vt":11.0,"n_candidates":32,"bearing":42.53},{"type":"scan","channel":3,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"no_signal","vt":17.0,"n_candidates":32},{"type":"scan","channel":4,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"no_signal","vt":23.0,"n_candidates":32},{"type":"scan","channel":5,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"signal","vt":29.0,"n_candidates":32,"bearing":142.93},{"type":"scan","channel":6,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"signal","vt":35.0,"n_candidates":32,"bearing":21.58},{"type":"scan","channel":7,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"no_signal","vt":41.0,"n_candidates":32},{"type":"scan","channel":8,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"no_signal","vt":47.0,"n_candidates":32},{"type":"scan","channel":9,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"no_signal","vt":53.0,"n_candidates":32},{"type":"scan","channel":10,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"no_signal","vt":59.0,"n_candidates":32},{"type":"scan","channel":11,"target":[0.0,0.0],"pose":[0.0,0.0],"result":"no_signal","vt":65.0,"n_candidates":32},{"type":"scan","channel":12,"target":[1108.655,459.22],"pose":[1108.655,459.22],"result":"no_signal","vt":311.0,"n_candidates":32},{"type":"scan","channel":1,"target":[1108.655,459.22],"pose":[1108.655,459.22],"result":"no_signal","vt":317.0,"n_candidates":32},{"type":"scan","channel":3,"target":[1108.655,459.22],"pose":[1108.655,459.22],"result":"signal","vt":323.0,"n_candidates":32,"bearing":113.51},{"type":"scan","channel":6,"target":[1129.965,21.411],"pose":[1129.965,21.411],"result":"signal","vt":416.665466,"n_candidates":32,"bearing":169.34},{"type":"scan","channel":5,"target":[-597.926,949.223],"pose":[-597.926,949.223],"result":"signal","vt":814.912498,"n_candidates":32,"bearing":195.85},{"type":"scan","channel":2,"target":[536.935,1022.4],"pose":[536.935,1022.4],"result":"signal","vt":1048.356038,"n_candidates":32,"bearing":266.02},{"type":"scan","channel":3,"target":[346.037,1292.104],"pose":[346.037,1292.104],"result":"signal","vt":1120.441697,"n_candidates":32,"bearing":25.78},{"type":"scan","channel":6,"target":[201.136,504.879],"pose":[201.136,504.879],"result":"signal","vt":1286.531715,"n_candidates":32,"bearing":301.56},{"type":"clear","channel":6,"target":[411.575,162.613],"pose":[411.575,162.613],"result":"clear_success","vt":1371.888675,"n_candidates":32,"clear_success":true},{"type":"scan","channel":12,"target":[424.264,-424.264],"pose":[424.264,-424.264],"result":"no_signal","vt":1495.291429,"n_candidates":32},{"type":"scan","channel":19,"target":[459.22,-1108.655],"pose":[459.22,-1108.655],"result":"no_signal","vt":1638.348129,"n_candidates":32},{"type":"scan","channel":1,"target":[459.22,-1108.655],"pose":[459.22,-1108.655],"result":"no_signal","vt":1644.348129,"n_candidates":32},{"type":"scan","channel":4,"target":[459.22,-1108.655],"pose":[459.22,-1108.655],"result":"no_signal","vt":1650.348129,"n_candidates":32},{"type":"scan","channel":7,"target":[459.22,-1108.655],"pose":[459.22,-1108.655],"result":"no_signal","vt":1656.348129,"n_candidates":32},{"type":"scan","channel":8,"target":[459.22,-1108.655],"pose":[459.22,-1108.655],"result":"no_signal","vt":1662.348129,"n_candidates":32},{"type":"scan","channel":9,"target":[459.22,-1108.655],"pose":[459.22,-1108.655],"result":"signal","vt":1668.348129,"n_candidates":32,"bearing":201.67},{"type":"scan","channel":9,"target":[-182.716,-1789.311],"pose":[-182.716,-1789.311],"result":"signal","vt":1860.470994,"n_candidates":32,"bearing":136.79},{"type":"scan","channel":5,"target":[-877.767,466.738],"pose":[-877.767,466.738],"result":"signal","vt":2338.608931,"n_candidates":32,"bearing":119.28},{"type":"clear","channel":5,"target":[-1073.008,814.525],"pose":[-1073.008,814.525],"result":"clear_success","vt":2423.3773,"n_candidates":32,"clear_success":true},{"type":"scan","channel":1,"target":[-1073.008,814.525],"pose":[-1073.008,814.525],"result":"signal","vt":2429.3773,"n_candidates":32,"bearing":241.9},{"type":"scan","channel":1,"target":[-1799.859,-22.545],"pose":[-1799.859,-22.545],"result":"signal","vt":2656.097678,"n_candidates":32,"bearing":39.44},{"type":"scan","channel":1,"target":[-1100.986,41.759],"pose":[-1100.986,41.759],"result":"signal","vt":2801.462688,"n_candidates":32,"bearing":118.87},{"type":"clear","channel":1,"target":[-1294.95,394.045],"pose":[-1294.95,394.045],"result":"clear_success","vt":2886.893475,"n_candidates":32,"clear_success":true},{"type":"scan","channel":4,"target":[-1294.95,394.045],"pose":[-1294.95,394.045],"result":"signal","vt":2892.893475,"n_candidates":32,"bearing":63.36},{"type":"scan","channel":4,"target":[-1265.23,1249.895],"pose":[-1265.23,1249.895],"result":"signal","vt":3069.166511,"n_candidates":32,"bearing":320.36},{"type":"clear","channel":4,"target":[-983.205,1015.904],"pose":[-983.205,1015.904],"result":"clear_success","vt":3147.457507,"n_candidates":32,"clear_success":true},{"type":"scan","channel":7,"target":[-983.205,1015.904],"pose":[-983.205,1015.904],"result":"no_signal","vt":3153.457507,"n_candidates":32},{"type":"scan","channel":8,"target":[-983.205,1015.904],"pose":[-983.205,1015.904],"result":"no_signal","vt":3159.457507,"n_candidates":32},{"type":"scan","channel":10,"target":[-983.205,1015.904],"pose":[-983.205,1015.904],"result":"signal","vt":3165.457507,"n_candidates":32,"bearing":228.85},{"type":"scan","channel":10,"target":[-1326.154,47.668],"pose":[-1326.154,47.668],"result":"signal","vt":3375.893179,"n_candidates":32,"bearing":88.73},{"type":"scan","channel":10,"target":[-1686.672,628.6],"pose":[-1686.672,628.6],"result":"signal","vt":3517.634637,"n_candidates":32,"bearing":1.77},{"type":"clear","channel":10,"target":[-1312.878,640.358],"pose":[-1312.878,640.358],"result":"clear_success","vt":3597.430288,"n_candidates":32,"clear_success":true},{"type":"scan","channel":11,"target":[-1312.878,640.358],"pose":[-1312.878,640.358],"result":"no_signal","vt":3603.430288,"n_candidates":32},{"type":"scan","channel":12,"target":[-1312.878,640.358],"pose":[-1312.878,640.358],"result":"no_signal","vt":3609.430288,"n_candidates":32},{"type":"scan","channel":13,"target":[-1312.878,640.358],"pose":[-1312.878,640.358],"result":"no_signal","vt":3615.430288,"n_candidates":32},{"type":"scan","channel":14,"target":[-1312.878,640.358],"pose":[-1312.878,640.358],"result":"no_signal","vt":3621.430288,"n_candidates":32},{"type":"scan","channel":15,"target":[-1312.878,640.358],"pose":[-1312.878,640.358],"result":"no_signal","vt":3627.430288,"n_candidates":32},{"type":"scan","channel":16,"target":[-1312.878,640.358],"pose":[-1312.878,640.358],"result":"signal","vt":3633.430288,"n_candidates":32,"bearing":269.18},{"type":"scan","channel":16,"target":[-927.193,-359.599],"pose":[-927.193,-359.599],"result":"signal","vt":3852.781898,"n_candidates":32,"bearing":159.21},{"type":"scan","channel":2,"target":[97.435,456.441],"pose":[97.435,456.441],"result":"signal","vt":4120.757686,"n_candidates":32,"bearing":359.82},{"type":"clear","channel":2,"target":[497.337,455.385],"pose":[497.337,455.385],"result":"clear_success","vt":4205.73845,"n_candidates":32,"clear_success":true},{"type":"scan","channel":13,"target":[497.337,455.385],"pose":[497.337,455.385],"result":"signal","vt":4211.73845,"n_candidates":32,"bearing":251.1},{"type":"scan","channel":13,"target":[573.404,-490.755],"pose":[573.404,-490.755],"result":"signal","vt":4406.576976,"n_candidates":32,"bearing":149.45},{"type":"clear","channel":13,"target":[240.908,-294.162],"pose":[240.908,-294.162],"result":"clear_success","vt":4488.830442,"n_candidates":32,"clear_success":true},{"type":"scan","channel":14,"target":[240.908,-294.162],"pose":[240.908,-294.162],"result":"no_signal","vt":4494.830442,"n_candidates":32},{"type":"scan","channel":15,"target":[240.908,-294.162],"pose":[240.908,-294.162],"result":"no_signal","vt":4500.830442,"n_candidates":32},{"type":"scan","channel":17,"target":[240.908,-294.162],"pose":[240.908,-294.162],"result":"no_signal","vt":4506.830442,"n_candidates":32},{"type":"scan","channel":18,"target":[240.908,-294.162],"pose":[240.908,-294.162],"result":"signal","vt":4512.830442,"n_candidates":32,"bearing":142.55},{"type":"scan","channel":18,"target":[-753.025,-32.463],"pose":[-753.025,-32.463],"result":"signal","vt":4723.391878,"n_candidates":32,"bearing":55.82},{"type":"scan","channel":9,"target":[-642.4,-1681.464],"pose":[-642.4,-1681.464],"result":"signal","vt":5059.93344,"n_candidates":32,"bearing":51.81},{"type":"clear","channel":9,"target":[-495.899,-1494.983],"pose":[-495.899,-1494.983],"result":"clear_success","vt":5112.362492,"n_candidates":32,"clear_success":true},{"type":"scan","channel":7,"target":[-495.899,-1494.983],"pose":[-495.899,-1494.983],"result":"no_signal","vt":5118.362492,"n_candidates":32},{"type":"scan","channel":8,"target":[-495.899,-1494.983],"pose":[-495.899,-1494.983],"result":"no_signal","vt":5124.362492,"n_candidates":32},{"type":"scan","channel":11,"target":[-495.899,-1494.983],"pose":[-495.899,-1494.983],"result":"no_signal","vt":5130.362492,"n_candidates":32},{"type":"scan","channel":12,"target":[-495.899,-1494.983],"pose":[-495.899,-1494.983],"result":"no_signal","vt":5136.362492,"n_candidates":32},{"type":"scan","channel":14,"target":[-495.899,-1494.983],"pose":[-495.899,-1494.983],"result":"no_signal","vt":5142.362492,"n_candidates":32},{"type":"scan","channel":15,"target":[-495.899,-1494.983],"pose":[-495.899,-1494.983],"result":"no_signal","vt":5148.362492,"n_candidates":32},{"type":"scan","channel":17,"target":[-495.899,-1494.983],"pose":[-495.899,-1494.983],"result":"no_signal","vt":5154.362492,"n_candidates":32},{"type":"scan","channel":19,"target":[-495.899,-1494.983],"pose":[-495.899,-1494.983],"result":"no_signal","vt":5160.362492,"n_candidates":32},{"type":"scan","channel":12,"target":[-1108.655,-459.22],"pose":[-1108.655,-459.22],"result":"no_signal","vt":5407.051052,"n_candidates":32},{"type":"scan","channel":7,"target":[-1108.655,-459.22],"pose":[-1108.655,-459.22],"result":"no_signal","vt":5413.051052,"n_candidates":32},{"type":"scan","channel":8,"target":[-1108.655,-459.22],"pose":[-1108.655,-459.22],"result":"no_signal","vt":5419.051052,"n_candidates":32},{"type":"scan","channel":11,"target":[-1108.655,-459.22],"pose":[-1108.655,-459.22],"result":"no_signal","vt":5425.051052,"n_candidates":32},{"type":"scan","channel":14,"target":[-1108.655,-459.22],"pose":[-1108.655,-459.22],"result":"no_signal","vt":5431.051052,"n_candidates":32},{"type":"scan","channel":15,"target":[-1108.655,-459.22],"pose":[-1108.655,-459.22],"result":"no_signal","vt":5437.051052,"n_candidates":32},{"type":"scan","channel":17,"target":[-1108.655,-459.22],"pose":[-1108.655,-459.22],"result":"no_signal","vt":5443.051052,"n_candidates":32},{"type":"scan","channel":19,"target":[-1108.655,-459.22],"pose":[-1108.655,-459.22],"result":"no_signal","vt":5449.051052,"n_candidates":32},{"type":"scan","channel":7,"target":[459.22,1108.655],"pose":[459.22,1108.655],"result":"no_signal","vt":5898.513228,"n_candidates":32},{"type":"scan","channel":8,"target":[459.22,1108.655],"pose":[459.22,1108.655],"result":"no_signal","vt":5904.513228,"n_candidates":32},{"type":"scan","channel":11,"target":[459.22,1108.655],"pose":[459.22,1108.655],"result":"no_signal","vt":5910.513228,"n_candidates":32},{"type":"scan","channel":14,"target":[459.22,1108.655],"pose":[459.22,1108.655],"result":"no_signal","vt":5916.513228,"n_candidates":32},{"type":"scan","channel":15,"target":[459.22,1108.655],"pose":[459.22,1108.655],"result":"no_signal","vt":5922.513228,"n_candidates":32},{"type":"scan","channel":17,"target":[459.22,1108.655],"pose":[459.22,1108.655],"result":"no_signal","vt":5928.513228,"n_candidates":32},{"type":"scan","channel":19,"target":[459.22,1108.655],"pose":[459.22,1108.655],"result":"signal","vt":5934.513228,"n_candidates":32,"bearing":155.92},{"type":"scan","channel":19,"target":[-537.373,1117.956],"pose":[-537.373,1117.956],"result":"signal","vt":6138.840453,"n_candidates":32,"bearing":62.91},{"type":"clear","channel":19,"target":[-355.605,1472.639],"pose":[-355.605,1472.639],"result":"clear_success","vt":6223.549855,"n_candidates":32,"clear_success":true},{"type":"scan","channel":12,"target":[-355.605,1472.639],"pose":[-355.605,1472.639],"result":"no_signal","vt":6229.549855,"n_candidates":32},{"type":"scan","channel":20,"target":[-355.605,1472.639],"pose":[-355.605,1472.639],"result":"no_signal","vt":6235.549855,"n_candidates":32},{"type":"scan","channel":20,"target":[424.264,-424.264],"pose":[424.264,-424.264],"result":"no_signal","vt":6650.741848,"n_candidates":32},{"type":"scan","channel":17,"target":[1166.726,-1166.726],"pose":[1166.726,-1166.726],"result":"no_signal","vt":6866.741848,"n_candidates":32},{"type":"scan","channel":11,"target":[1166.726,-1166.726],"pose":[1166.726,-1166.726],"result":"no_signal","vt":6872.741848,"n_candidates":32},{"type":"scan","channel":12,"target":[1166.726,-1166.726],"pose":[1166.726,-1166.726],"result":"no_signal","vt":6878.741848,"n_candidates":32},{"type":"scan","channel":14,"target":[1166.726,-1166.726],"pose":[1166.726,-1166.726],"result":"no_signal","vt":6884.741848,"n_candidates":32},{"type":"scan","channel":15,"target":[1166.726,-1166.726],"pose":[1166.726,-1166.726],"result":"no_signal","vt":6890.741848,"n_candidates":32},{"type":"scan","channel":20,"target":[1166.726,-1166.726],"pose":[1166.726,-1166.726],"result":"no_signal","vt":6896.741848,"n_candidates":32},{"type":"scan","channel":20,"target":[1650.0,-0.0],"pose":[1650.0,-0.0],"result":"no_signal","vt":7154.312913,"n_candidates":32},{"type":"scan","channel":7,"target":[1650.0,-0.0],"pose":[1650.0,-0.0],"result":"no_signal","vt":7160.312913,"n_candidates":32},{"type":"scan","channel":8,"target":[1650.0,-0.0],"pose":[1650.0,-0.0],"result":"no_signal","vt":7166.312913,"n_candidates":32},{"type":"scan","channel":11,"target":[1650.0,-0.0],"pose":[1650.0,-0.0],"result":"no_signal","vt":7172.312913,"n_candidates":32},{"type":"scan","channel":14,"target":[1650.0,-0.0],"pose":[1650.0,-0.0],"result":"no_signal","vt":7178.312913,"n_candidates":32},{"type":"scan","channel":15,"target":[1650.0,-0.0],"pose":[1650.0,-0.0],"result":"no_signal","vt":7184.312913,"n_candidates":32},{"type":"scan","channel":17,"target":[1650.0,-0.0],"pose":[1650.0,-0.0],"result":"no_signal","vt":7190.312913,"n_candidates":32},{"type":"scan","channel":3,"target":[877.159,1105.643],"pose":[877.159,1105.643],"result":"signal","vt":7466.107738,"n_candidates":32,"bearing":120.75},{"type":"clear","channel":3,"target":[672.39,1449.567],"pose":[672.39,1449.567],"result":"clear_success","vt":7551.161248,"n_candidates":26,"clear_success":true},{"type":"scan","channel":12,"target":[672.39,1449.567],"pose":[672.39,1449.567],"result":"no_signal","vt":7557.161248,"n_candidates":25},{"type":"scan","channel":20,"target":[672.39,1449.567],"pose":[672.39,1449.567],"result":"no_signal","vt":7563.161248,"n_candidates":25},{"type":"scan","channel":18,"target":[-129.702,296.439],"pose":[-129.702,296.439],"result":"signal","vt":7850.092322,"n_candidates":25,"bearing":179.26},{"type":"clear","channel":18,"target":[-526.837,300.212],"pose":[-526.837,300.212],"result":"clear_success","vt":7934.522901,"n_candidates":18,"clear_success":true},{"type":"scan","channel":20,"target":[-526.837,300.212],"pose":[-526.837,300.212],"result":"no_signal","vt":7940.522901,"n_candidates":17},{"type":"scan","channel":16,"target":[-1125.126,137.921],"pose":[-1125.126,137.921],"result":"signal","vt":8070.504808,"n_candidates":17,"bearing":240.32},{"type":"clear","channel":16,"target":[-1323.261,-209.395],"pose":[-1323.261,-209.395],"result":"clear_success","vt":8155.476225,"n_candidates":10,"clear_success":true},{"type":"exit","channel":16,"target":[-1323.261,-209.395],"pose":[-1323.261,-209.395],"result":"clear_success","vt":8155.476225,"n_candidates":9,"clear_success":true}],"truth":{"total":12,"n_omni":12,"n_dir":0,"jammers":[{"channel":5,"x":-1071.101438956493,"y":812.8637863683507,"r_eff":1488.12755279646,"kind":"omni","direction_deg":null,"cleared":true},{"channel":13,"x":240.66462058350905,"y":-296.68067093554356,"r_eff":1144.8046431658381,"kind":"omni","direction_deg":null,"cleared":true},{"channel":2,"x":496.39458032437096,"y":453.353252194255,"r_eff":1154.2409120509672,"kind":"omni","direction_deg":null,"cleared":true},{"channel":3,"x":674.2162107602403,"y":1449.9223329665797,"r_eff":1290.800081831233,"kind":"omni","direction_deg":null,"cleared":true},{"channel":4,"x":-983.9214306043956,"y":1016.6369190602128,"r_eff":1273.872232854779,"kind":"omni","direction_deg":null,"cleared":true},{"channel":6,"x":412.78398287541336,"y":162.23736676682904,"r_eff":1102.9793564096633,"kind":"omni","direction_deg":null,"cleared":true},{"channel":10,"x":-1311.5002777548016,"y":641.5544383996541,"r_eff":1157.0735851883958,"kind":"omni","direction_deg":null,"cleared":true},{"channel":1,"x":-1296.2645241857429,"y":392.68950268703577,"r_eff":1149.8834984318412,"kind":"omni","direction_deg":null,"cleared":true},{"channel":9,"x":-496.9640884610065,"y":-1497.2435247620656,"r_eff":1122.0482553610764,"kind":"omni","direction_deg":null,"cleared":true},{"channel":16,"x":-1324.720037986309,"y":-211.49199234709022,"r_eff":1437.5687477867145,"kind":"omni","direction_deg":null,"cleared":true},{"channel":19,"x":-356.94444869823,"y":1468.9689608115082,"r_eff":1490.087423746291,"kind":"omni","direction_deg":null,"cleared":true},{"channel":18,"x":-529.4632941463011,"y":299.26058351663715,"r_eff":1378.5704647826246,"kind":"omni","direction_deg":null,"cleared":true}]},"summary":{"sources_total":12,"sources_cleared":12,"clear_ratio":1.0,"virtual_time_s":8155.476,"avg_clear_time_s":4758.224,"route_distance_m":37542.38,"num_scans":100,"num_clears":12,"failed_clears":0,"num_switches":87,"steps":112,"wall_time_s":0.078},"meta":{"clear_radius_m":20.0,"near_radius_m":5.0,"directional_half_angle_deg":90.0,"n_frames":113}}],"meta":{"clear_radius_m":20.0,"near_radius_m":5.0,"directional_half_angle_deg":90.0,"n_frames":113}}</script>
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById("data").textContent);
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const algoSel = document.getElementById("algo");
+const slider = document.getElementById("slider");
+const playBtn = document.getElementById("play");
+const ghostChk = document.getElementById("ghost");
+const statsEl = document.getElementById("stats");
+const frameInfo = document.getElementById("frameinfo");
+
+// distinct, colour-blind-friendlyish palette keyed by channel (1..20)
+const CH_COLORS = ["#58a6ff","#f0883e","#3fb950","#db61a2","#e3b341","#a371f7",
+  "#39c5cf","#f85149","#7ee787","#ff9bce","#79c0ff","#ffa657","#56d364",
+  "#bc8cff","#d29922","#ff7b72","#2ea043","#e685b5","#1f6feb","#f2cc60"];
+const chColor = (c) => CH_COLORS[((c|0) - 1 + CH_COLORS.length*3) % CH_COLORS.length];
+
+let R = DATA.runs.length ? DATA.runs[0].arena_radius : 1800;
+let cur = 0;          // current run index
+let frame = 0;        // frames revealed
+let timer = null;
+
+// ---- world<->screen transform (square canvas, [-R,R] both axes; y up) ----
+function tf() {
+  const S = cv.width, pad = 24, span = 2*R;
+  const k = (S - 2*pad) / span;
+  return {
+    x: (wx) => pad + (wx + R) * k,
+    y: (wy) => S - pad - (wy + R) * k,   // flip: north is up
+    k,
+  };
+}
+
+function drawArena(T) {
+  ctx.save();
+  ctx.strokeStyle = "#30363d"; ctx.lineWidth = 1;
+  // arena disc
+  ctx.beginPath();
+  ctx.arc(T.x(0), T.y(0), R*T.k, 0, 2*Math.PI);
+  ctx.stroke();
+  // axes
+  ctx.strokeStyle = "#20262d";
+  ctx.beginPath();
+  ctx.moveTo(T.x(-R), T.y(0)); ctx.lineTo(T.x(R), T.y(0));
+  ctx.moveTo(T.x(0), T.y(-R)); ctx.lineTo(T.x(0), T.y(R));
+  ctx.stroke();
+  ctx.fillStyle = "#586069"; ctx.font = "11px sans-serif";
+  ctx.fillText("E +x", T.x(R)-34, T.y(0)-6);
+  ctx.fillText("N +y", T.x(0)+6, T.y(R)+14);
+  ctx.restore();
+}
+
+// which channels are cleared by frame f (inclusive)
+function clearedByFrame(run, f) {
+  const s = new Set();
+  for (let i = 0; i < f && i < run.frames.length; i++) {
+    const fr = run.frames[i];
+    if (fr.type === "clear" && fr.clear_success) s.add(fr.channel);
+  }
+  return s;
+}
+
+function drawTruth(run, T, cleared) {
+  if (!run.truth) return;
+  const halfArc = (DATA.meta.directional_half_angle_deg || 90) * Math.PI/180;
+  for (const j of run.truth.jammers) {
+    const px = T.x(j.x), py = T.y(j.y);
+    const isCleared = cleared.has(j.channel);
+    // directional coverage sector (faint), only while still relevant
+    if (j.kind === "dir" && j.direction_deg != null) {
+      const a0 = j.direction_deg * Math.PI/180;
+      ctx.save();
+      ctx.fillStyle = isCleared ? "#3fb95015" : "#8b949e18";
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      // canvas angles are clockwise & y-down; negate to match math/y-up
+      ctx.arc(px, py, Math.min(j.r_eff, R)*T.k, -(a0+halfArc), -(a0-halfArc));
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    // source marker
+    ctx.save();
+    if (isCleared) {
+      ctx.strokeStyle = chColor(j.channel); ctx.lineWidth = 2.5;
+      const r = 7;
+      ctx.beginPath();
+      ctx.moveTo(px-r,py-r); ctx.lineTo(px+r,py+r);
+      ctx.moveTo(px+r,py-r); ctx.lineTo(px-r,py+r);
+      ctx.stroke();
+      ctx.fillStyle = chColor(j.channel);
+      ctx.beginPath(); ctx.arc(px,py,3,0,2*Math.PI); ctx.fill();
+    } else {
+      ctx.fillStyle = "#6e7681";
+      ctx.beginPath(); ctx.arc(px,py,6,0,2*Math.PI); ctx.fill();
+      ctx.strokeStyle = "#0a0d12"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.fillStyle = isCleared ? chColor(j.channel) : "#8b949e";
+    ctx.font = "10px sans-serif";
+    ctx.fillText("CH"+j.channel, px+8, py-8);
+    ctx.restore();
+  }
+}
+
+function drawFans(run, T, upto) {
+  const err = run.bearing_error_deg || 1.0;
+  const reach = Math.min(1500, R) * T.k;   // visual fan length
+  for (let i = 0; i < upto && i < run.frames.length; i++) {
+    const fr = run.frames[i];
+    if (fr.type !== "scan") continue;
+    const ox = T.x(fr.pose[0]), oy = T.y(fr.pose[1]);
+    if (fr.result === "signal" && fr.bearing != null) {
+      const b = fr.bearing * Math.PI/180;
+      const de = err * Math.PI/180;
+      const col = chColor(fr.channel);
+      const g = ctx.createRadialGradient(ox,oy,0,ox,oy,reach);
+      g.addColorStop(0, col+"55"); g.addColorStop(1, col+"05");
+      ctx.save();
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      ctx.arc(ox, oy, reach, -(b+de), -(b-de));
+      ctx.closePath(); ctx.fill();
+      // center bearing line
+      ctx.strokeStyle = col+"aa"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(ox,oy);
+      ctx.lineTo(ox + reach*Math.cos(b), oy - reach*Math.sin(b));
+      ctx.stroke();
+      ctx.restore();
+    } else if (fr.result === "near") {
+      ctx.save();
+      ctx.fillStyle = "#f8514966";
+      ctx.beginPath(); ctx.arc(ox,oy,7,0,2*Math.PI); ctx.fill();
+      ctx.restore();
+    } else {
+      // no_signal: a small hollow tick so the viewer sees the probe happened
+      ctx.save();
+      ctx.strokeStyle = "#484f58"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(ox,oy,3,0,2*Math.PI); ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+function drawRoute(run, T, upto, ghost) {
+  ctx.save();
+  ctx.strokeStyle = ghost ? "#f0883e33" : "#f0883e";
+  ctx.lineWidth = ghost ? 1 : 2;
+  ctx.beginPath();
+  ctx.moveTo(T.x(0), T.y(0));   // starts at origin
+  for (let i = 0; i < upto && i < run.frames.length; i++) {
+    const p = run.frames[i].pose;
+    ctx.lineTo(T.x(p[0]), T.y(p[1]));
+  }
+  ctx.stroke();
+  if (!ghost) {
+    // clear-attempt markers along the way
+    for (let i = 0; i < upto && i < run.frames.length; i++) {
+      const fr = run.frames[i];
+      if (fr.type !== "clear") continue;
+      const px = T.x(fr.pose[0]), py = T.y(fr.pose[1]);
+      ctx.fillStyle = fr.clear_success ? "#3fb95000" : "#f8514933";
+      ctx.strokeStyle = fr.clear_success ? "#3fb950" : "#f85149";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(px,py,9,0,2*Math.PI); ctx.stroke();
+    }
+    // robot head at the last revealed pose
+    let hx = 0, hy = 0;
+    if (upto > 0) {
+      const p = run.frames[Math.min(upto, run.frames.length)-1].pose;
+      hx = p[0]; hy = p[1];
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.arc(T.x(hx), T.y(hy), 5, 0, 2*Math.PI); ctx.fill();
+    ctx.strokeStyle = "#f0883e"; ctx.lineWidth = 2; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function render() {
+  const run = DATA.runs[cur];
+  R = run.arena_radius || 1800;
+  const T = tf();
+  ctx.clearRect(0,0,cv.width,cv.height);
+  drawArena(T);
+  if (ghostChk.checked) {
+    DATA.runs.forEach((r, i) => { if (i !== cur) drawRoute(r, T, r.frames.length, true); });
+  }
+  const cleared = clearedByFrame(run, frame);
+  drawTruth(run, T, cleared);
+  drawFans(run, T, frame);
+  drawRoute(run, T, frame, false);
+  updateFrameInfo(run);
+}
+
+function updateFrameInfo(run) {
+  const n = run.frames.length;
+  let txt = `帧 ${frame}/${n}`;
+  if (frame > 0 && frame <= n) {
+    const fr = run.frames[frame-1];
+    let d = `${fr.type} CH${fr.channel} → ${fr.result}`;
+    if (fr.bearing != null) d += ` @ ${fr.bearing}°`;
+    txt += ` · ${d} · t=${fr.vt}s`;
+  }
+  frameInfo.textContent = txt;
+}
+
+function fillStats(run) {
+  const s = run.summary;
+  const rows = [
+    ["清除 / 总数", `${s.sources_cleared} / ${s.sources_total}`],
+    ["清除比例", (s.clear_ratio*100).toFixed(1)+"%"],
+    ["定位清除总时间 (虚拟)", s.virtual_time_s+" s"],
+    ["平均定位清除时间", s.avg_clear_time_s==null?"—":s.avg_clear_time_s+" s"],
+    ["行进距离", s.route_distance_m+" m"],
+    ["检测次数", s.num_scans],
+    ["清除尝试 (失败)", `${s.num_clears} (${s.failed_clears})`],
+    ["切换频道次数", s.num_switches],
+    ["动作步数", s.steps],
+  ];
+  statsEl.innerHTML = rows.map(([k,v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+}
+
+function selectRun(i) {
+  cur = i;
+  const run = DATA.runs[cur];
+  slider.max = run.frames.length;
+  frame = run.frames.length;      // show the whole run by default
+  slider.value = frame;
+  fillStats(run);
+  render();
+}
+
+function stopPlay() { if (timer) { clearInterval(timer); timer = null; playBtn.textContent = "▶ 播放"; } }
+
+playBtn.onclick = () => {
+  if (timer) { stopPlay(); return; }
+  const run = DATA.runs[cur];
+  if (frame >= run.frames.length) { frame = 0; }
+  playBtn.textContent = "⏸ 暂停";
+  timer = setInterval(() => {
+    frame++;
+    slider.value = frame;
+    render();
+    if (frame >= DATA.runs[cur].frames.length) stopPlay();
+  }, 180);
+};
+slider.oninput = () => { stopPlay(); frame = +slider.value; render(); };
+algoSel.onchange = () => { stopPlay(); selectRun(+algoSel.value); };
+ghostChk.onchange = render;
+
+// init
+DATA.runs.forEach((r, i) => {
+  const o = document.createElement("option");
+  o.value = i;
+  o.textContent = `${r.label} — 清除 ${r.summary.sources_cleared}/${r.summary.sources_total}, t=${r.summary.virtual_time_s}s`;
+  algoSel.appendChild(o);
+});
+if (DATA.runs.length) selectRun(0);
+</script>
+</body>
+</html>

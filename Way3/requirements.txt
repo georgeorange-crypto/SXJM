@@ -1,0 +1,6 @@
+# jammerhunt 的核心（策略 agent、几何 geometry、覆盖 coverage、虚拟世界 environment、
+# World 抽象 interface、HTTP 入口 main）——【仅依赖 Python 标准库】（Python >= 3.9）。
+# 正式比赛无需安装任何第三方包即可运行 `python -m jammerhunt.main ...`。
+#
+# 下面仅为“运行单元测试 / 蒙特卡洛回归”所需：
+pytest>=7.0

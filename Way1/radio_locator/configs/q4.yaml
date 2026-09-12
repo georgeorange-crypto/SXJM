@@ -1,0 +1,27 @@
+# 问题 4（全向 + 定向混合）专用参数。
+
+q4_coverage:
+  # 三角网边长 h < 1000 保证：源在某三角形内 ⇒ 三顶点均在 R>=1000 内，
+  # 且任意 180° 半平面至少含一顶点 ⇒ 必被某顶点接收。
+  triangle_edge: 950.0
+
+quadtree:
+  initial_cell_size: 200.0
+  coarse_resolution: 10.0
+  fine_resolution: 0.5
+  refine_below_mec_radius: 50.0
+  max_depth: 16
+
+planner:
+  horizon: 1
+  max_localization_candidates: 48
+  lookahead_lambda: 1.0
+  held_karp_max_targets: 16
+  route_heuristic_threshold: 18   # 点数 > 该值改用 nearest-insertion + 2-opt
+
+localization:
+  clear_mec_radius: 19.0
+
+directional:
+  # 圆周方向区间判定裕量（度），吸收浮点与 ±1° 边界。
+  angle_margin_deg: 0.001
