@@ -191,6 +191,44 @@ class ChannelBelief:
         """True if ``p`` is inside any NO_SIGNAL disc (source provably not there)."""
         return any(dist(p, d.center) <= d.radius - eps for d in self.negative_discs)
 
+    def effective_vertices(self) -> List[Point]:
+        """F_c vertices that a NO_SIGNAL disc has NOT provably ruled out — the
+        corners of the convex superset still consistent with the negative info
+        (DESIGN.md §5: negative discs are consumed *at planning time*). PLANNING
+        ONLY. The true source is in ``F_c`` (positive soundness) and outside every
+        exclusion disc (NO_SIGNAL soundness), so it is never one of the dropped
+        vertices — filtering can only remove provably-impossible corners."""
+        if not self.F_c:
+            return []
+        return [v for v in self.F_c if not self.excludes(v)]
+
+    def effective_diameter(self) -> float:
+        """Planning-only diameter of the *effective* feasible set (``F_c`` minus the
+        NO_SIGNAL exclusion discs), estimated over the surviving ``F_c`` vertices.
+
+        Always ``<= diameter`` (a max over a vertex subset), so no-signal that clips
+        a corner of a detected channel's region shows up as a smaller effective
+        diameter — the shrink the belief's convex superset can't represent (its
+        ``_rebuild`` deliberately keeps ``F_c`` convex, §3.1).
+
+        NEVER feeds the CLEAR/absent judgment: ``mec_*`` / ``is_clearable`` /
+        ``clear_target`` stay on the sound convex superset (§3.3, §16 禁令). Falls
+        back to the full ``diameter`` when no polygon / no disc / <2 vertices survive
+        (never claim an unprovable shrink)."""
+        if not self.F_c or not self.negative_discs:
+            return self.diameter
+        survivors = self.effective_vertices()
+        if len(survivors) < 2:
+            return self.diameter
+        best = 0.0
+        for i in range(len(survivors)):
+            si = survivors[i]
+            for j in range(i + 1, len(survivors)):
+                d = dist(si, survivors[j])
+                if d > best:
+                    best = d
+        return min(best, self.diameter)
+
     # -- state transitions (called by executor / certificate manager) ------
 
     def mark_cleared(self) -> None:

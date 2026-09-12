@@ -155,6 +155,44 @@ def test_choose_returns_none_when_nothing_to_refine():
     assert nbv.choose(ChannelBelief(channel=1), robot_pos=(0.0, 0.0)) is None
 
 
+# --- P0-A: NO_SIGNAL prunes the planning hypothesis set -----------------------
+
+
+def test_choose_prunes_hypotheses_ruled_out_by_no_signal():
+    """A NO_SIGNAL disc that provably rules out part of F_c drops those hypotheses
+    from the minimax max_j, so NBV no longer plans against impossible sources. The
+    result is still a valid REFINE (planning only — belief F_c / mec unchanged)."""
+    nbv = MinimaxNBV(lambda_t=0.0)
+    b = _first_bearing_belief((0.0, 0.0), 0.0)   # east sliver x∈[0,1500]
+    poly_before = list(b.F_c)
+    mec_before = (b.mec_center, b.mec_radius)
+
+    res_no_disc = nbv.choose(b, robot_pos=(0.0, 0.0))
+    assert res_no_disc is not None
+
+    # add a NO_SIGNAL far out on +x: rules out the far end of the sliver.
+    b.record_no_signal((2600.0, 0.0))
+    res = nbv.choose(b, robot_pos=(0.0, 0.0))
+    assert res is not None
+    # the hypotheses NBV actually optimised against are all still-possible sources
+    assert all(not b.excludes(h) for h in res.hypotheses)
+    # belief geometry is untouched by the planning-time pruning (§3.3, 禁令)
+    assert list(b.F_c) == poly_before
+    assert (b.mec_center, b.mec_radius) == mec_before
+
+
+def test_choose_falls_back_when_all_hypotheses_excluded():
+    """If (numeric edge) every hypothesis is inside a disc, NBV must still return a
+    viewpoint using the unfiltered set — never crash or act on an empty pool."""
+    from way4.belief.channel import ExclusionDisc
+    nbv = MinimaxNBV(lambda_t=0.0)
+    b = _first_bearing_belief((0.0, 0.0), 0.0)
+    b.negative_discs.append(ExclusionDisc((0.0, 0.0), 1.0e7))  # swallows everything
+    res = nbv.choose(b, robot_pos=(0.0, 0.0))
+    assert res is not None
+    assert len(res.hypotheses) > 0
+
+
 def test_hypotheses_capped():
     nbv = MinimaxNBV(n_hypotheses=8)
     b = _first_bearing_belief((0.0, 0.0), 10.0)

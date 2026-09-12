@@ -10,6 +10,8 @@ Plus Invariant D structurally: NO_SIGNAL never makes a channel PRESENT.
 import math
 import random
 
+import pytest
+
 from way4.belief import BeliefState, ChannelBelief, ChannelStatus
 
 ARENA = 1800.0
@@ -124,9 +126,74 @@ def test_no_false_clear_monte_carlo():
     assert clearable_seen > 100, f"test rarely reached clearable ({clearable_seen})"
 
 
+# --- P0-A: NO_SIGNAL enters the effective feasible set (planning only) --------
+
+
+def test_effective_diameter_never_exceeds_convex_diameter():
+    """The effective diameter is a max over a subset of F_c vertices, so it can
+    only be <= the convex-superset diameter — never an over-claim."""
+    source = (600.0, 0.0)
+    cb = ChannelBelief(channel=1)
+    # one distant bearing -> a long thin sliver (large diameter)
+    cb.record_bearing((0.0, 0.0), _bearing(source, (0.0, 0.0)))
+    d_convex = cb.diameter
+    # no exclusion discs yet -> effective == convex (never claim an unprovable shrink)
+    assert cb.effective_diameter() == d_convex
+
+
+def test_effective_diameter_is_max_over_surviving_vertices():
+    """White-box: with a known square F_c and a disc clipping the two far corners,
+    the effective diameter is the diameter over the SURVIVING vertices — strictly
+    below the convex diameter, and never touching mec_*/clear geometry."""
+    from way4.belief.channel import ExclusionDisc
+    cb = ChannelBelief(channel=1)
+    # a 1000 x 1000 square; convex diameter = the 1414 m diagonal
+    cb.F_c = [(0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0)]
+    cb.diameter = math.hypot(1000.0, 1000.0)
+    # a disc that swallows only the two right-hand corners (x=1000), leaving the
+    # left edge (x=0). Survivors: (0,0),(0,1000) -> effective diameter = 1000.
+    cb.negative_discs.append(ExclusionDisc((1000.0, 500.0), 600.0))
+    survivors = cb.effective_vertices()
+    assert (0.0, 0.0) in survivors and (0.0, 1000.0) in survivors
+    assert (1000.0, 0.0) not in survivors and (1000.0, 1000.0) not in survivors
+    assert cb.effective_diameter() == pytest.approx(1000.0)
+    assert cb.effective_diameter() < cb.diameter
+
+
+def test_no_signal_never_shrinks_clear_geometry():
+    """Adding a real NO_SIGNAL disc to a DETECTED channel leaves the CLEAR geometry
+    (mec_*, clear_target, is_clearable, area, status) byte-for-byte on the sound
+    convex superset — only the planning-side effective diameter may move (§3.3,
+    禁令10). effective_diameter stays <= the convex diameter throughout."""
+    source = (600.0, 0.0)
+    cb = ChannelBelief(channel=1)
+    cb.record_bearing((0.0, 0.0), _bearing(source, (0.0, 0.0)))  # sliver east along +x
+    d_convex_before = cb.diameter
+    snap = (cb.mec_center, cb.mec_radius, cb.area, cb.status, list(cb.F_c))
+
+    # NO_SIGNAL far behind the source on the -x axis (>1500 m from the true source,
+    # so the non-detection is sound whatever R_eff∈[1000,1500] is).
+    cb.record_no_signal((-950.0, 0.0))
+    assert cb.negative_discs, "disc recorded"
+    assert cb.effective_diameter() <= d_convex_before + 1e-9
+    assert cb.diameter == d_convex_before               # convex superset untouched
+    assert (cb.mec_center, cb.mec_radius, cb.area, cb.status, list(cb.F_c)) == snap
+    assert all(not cb.excludes(v) for v in cb.effective_vertices())
+
+
+def test_effective_diameter_falls_back_when_all_vertices_excluded():
+    """Degenerate guard: if every F_c vertex sits inside a disc (numeric edge), fall
+    back to the convex diameter rather than claim a zero/unprovable shrink."""
+    from way4.belief.channel import ExclusionDisc
+    source = (100.0, 0.0)
+    cb = ChannelBelief(channel=1)
+    cb.record_bearing((0.0, 0.0), _bearing(source, (0.0, 0.0)))
+    # a giant disc swallowing the whole region -> <2 survivors -> fall back
+    cb.negative_discs.append(ExclusionDisc((0.0, 0.0), 1.0e7))
+    assert cb.effective_diameter() == cb.diameter
+
+
 # --- near / status transitions -----------------------------------------------
-
-
 def test_near_makes_clearable_and_present():
     rng = random.Random(1)
     source = (500.0, -300.0)

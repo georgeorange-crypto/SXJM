@@ -236,6 +236,20 @@ class MinimaxNBV:
         hyps = self.representative_hypotheses(poly)
         if not hyps:
             return None
+        # P0-A: fold NO_SIGNAL into the *planning* hypothesis set. A representative
+        # hypothesis a real exclusion disc provably rules out (source can't be within
+        # the guaranteed radius of a NO_SIGNAL scan, §6.1) is dropped from the minimax
+        # max_j — the worst case is then taken only over still-possible sources, so a
+        # no-signal that clips one end of the region shrinks U(q) and can change the
+        # chosen viewpoint. Planning only: it prunes the hypothesis pool, never marks,
+        # certifies, or clears (the belief's F_c / mec stay the sound convex superset).
+        # Fall back to the unfiltered set if every hypothesis is excluded (never act on
+        # an empty P — that would only happen from numeric edge cases).
+        excludes = getattr(channel, "excludes", None)
+        if excludes is not None:
+            kept = [h for h in hyps if not excludes(h)]
+            if kept:
+                hyps = kept
         cands = self.candidate_viewpoints(channel, robot_pos)
         if not cands:
             return None
