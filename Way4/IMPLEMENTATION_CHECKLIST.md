@@ -19,6 +19,10 @@
   strict two-objective Pareto pruning in `src/way4/planner/opportunities.py`;
   targeted evidence: `21 passed in 0.35s`. This is the reusable foundation, not
   yet an end-to-end task-pool or viewpoint-region implementation.
+- Third pass added `RemainingTaskPool`/`WaitingTask`, planner-owned
+  `WAITING_FOR_ROUTE` bookkeeping, starvation promotion, pipeline synchronization,
+  and candidate diagnostic metadata. Targeted evidence: `8 passed, 4 skipped in
+  5.59s`; compileall passed. Automatic route-opportunity assignment remains open.
 
 审计日期：2026-09-12。判定规则：`[x]` 有代码+测试/运行证据；`[~]` 有部分实现但未闭环或缺验收证据；`[ ]` 未发现实现；`[?]` 因环境/证据不足无法确认。路径均相对于本项目根目录。
 
@@ -74,7 +78,7 @@
 | [x] | P1-010/P1-011 | H=1/2/3 参数化消融测试已加入；`execute_adaptive()` 支持 measurement 后中断/重排，并有 executor 测试。正式大样本性能曲线仍属于 P3 评测项。 |
 | [~] | P1-012/P1-013/P1-014/P1-015 | 已有 `InformationRidge`、spatial stop/joint route，并新增可独立运行的 `coverage_greedy()` baseline 与测试；正式跨场景性能对比仍缺失。 |
 | [~] | P1-016/P1-017/P1-018/P1-019 | 圆盘型 `K_i` 路由与有限 polygon 顶点 MEC `K_i` 证书均已实现；routing 回归 12 passed。仍缺多极点/真实 multipolygon 边界处理、大规模 TSPN 性能对比及实测统计。 |
-| [~] | P1-020/P1-021/P1-022/P1-023 | `FutureCost` 保留任务分解，route cache 按 target set 变化重算，并有按频道 uncertainty 与 crossing proxy 测试；仍缺 MEC/circle/K_i 正式消融、大规模统计及独立线上指标。 |
+| [~] | P1-020/P1-021/P1-022/P1-023 | `FutureCost` 保留任务分解，route cache 按 target set 变化重算，并有按频道 uncertainty/crossing proxy 测试；新增 planner-owned `RemainingTaskPool`，显式记录 WAITING_FOR_ROUTE、route opportunity cost、wait age 与 starvation promotion（opportunity/task-pool 5 tests passed）。仍未统一接入主 receding-horizon route，也缺 MEC/circle/K_i 正式消融、大规模统计及独立线上指标。 |
 | [~] | P1-024/P1-025/P1-026/P1-027 | 已有 deterministic expert release；新增 `Decision.to_record()`/`expert_dataset()` 导出全部候选 features、Q_math、chosen 与 temperature，并有测试。仍缺跨场景专家动作全集与 counterfactual rollout 统计。 |
 | [~] | P1-028–P1-036 | residual planner 已保持 `Score_math + Δθ` 且 learner 不输出坐标；新增 `rl/objectives.py` 明确验证 `r=-Δt`、full-clear terminal cliff、`V=-E[T_remaining]`，并提供 analytic-only / learned-only / analytic+residual 三组 value ablation 契约，3 个新测试通过。仍缺真实训练曲线、独立 critic 训练和跨 seed full-clear 对比，故保持 partial。 |
 

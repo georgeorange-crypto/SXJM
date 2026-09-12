@@ -22,6 +22,8 @@ from .receding_horizon import (
     RecedingHorizonPlanner,
 )
 from .spatial import InformationRidge, SpatialStopGenerator
+from .opportunities import RemainingTask, insertion_cost, pareto_prune
+from .task_pool import RemainingTaskPool, WaitingTask
 from .baselines import CoverageGreedyResult, coverage_greedy
 
 __all__ = [
@@ -37,6 +39,11 @@ __all__ = [
     "PlanResult",
     "RecedingHorizonPlanner",
     "SpatialStopGenerator",
+    "RemainingTask",
+    "insertion_cost",
+    "pareto_prune",
+    "RemainingTaskPool",
+    "WaitingTask",
     "InformationRidge",
     "CoverageGreedyResult",
     "coverage_greedy",
