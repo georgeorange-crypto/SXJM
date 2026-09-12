@@ -24,6 +24,20 @@ from ..core.actions import MacroCandidate, Primitive, PrimitiveKind
 from ..core.cost import AnalyticalCostModel, RobotState, _us
 from ..core.observation import Observation, ObservationKind
 
+#: Channels that must NEVER be scanned again — the exact criterion the channel
+#: scheduler masks at selection time (``ChannelScheduler.channel_value`` returns
+#: ``scannable=False`` for these). P0-D re-checks it per primitive so a channel
+#: resolved MID-batch (an opportunistic clear -> CLEARED, or a certificate that
+#: certifies ABSENT / a bearing that drops MEC to LOCALIZED) is not wastefully
+#: re-measured by the rest of a batch that was planned before it resolved.
+#: DETECTED and UNKNOWN are deliberately absent: they still carry refine / coverage
+#: value, and pruning them would drop VOI-positive work (§8, §16 禁令10).
+from ..belief import ChannelStatus
+
+_PRUNE_STATES = frozenset(
+    {ChannelStatus.CLEARED, ChannelStatus.ABSENT_CERTIFIED, ChannelStatus.LOCALIZED}
+)
+
 
 class Env(Protocol):
     """Minimal environment interface in Way4 terms."""
@@ -74,12 +88,18 @@ class MacroExecutor:
         certificate=None,
         cost_model: Optional[AnalyticalCostModel] = None,
         opportunistic_clear: bool = False,
+        adaptive_stop: bool = False,
     ) -> None:
         self.env = env
         self.belief = belief
         self.certificate = certificate
         self.cost = cost_model or AnalyticalCostModel()
         self.opportunistic_clear = opportunistic_clear
+        # P0-D: when True, once every remaining channel in the batch is resolved the
+        # macro stops early (nothing left worth measuring). Default False keeps the
+        # conservative "run the batch, only skip resolved primitives" posture. Never
+        # stops while a still-valuable (UNKNOWN/DETECTED) channel remains (§16 禁令10).
+        self.adaptive_stop = adaptive_stop
 
     # -- public API --------------------------------------------------------
 
@@ -92,10 +112,26 @@ class MacroExecutor:
         finished = False
         stopped = False
 
-        for prim in macro.primitives():
+        prims = macro.primitives()
+        for i, prim in enumerate(prims):
             if prim.kind == PrimitiveKind.EXIT:
                 finished = True
                 break
+            # P0-D in-batch mask prune: skip a MEASURE whose channel is already
+            # resolved on the LIVE belief/certificate (e.g. cleared by this batch's
+            # own opportunistic clear, or localised). Judged BEFORE the budget check
+            # — a skipped primitive costs nothing, so it neither consumes budget nor
+            # trips 超时即停. Never prunes UNKNOWN/DETECTED (§16 禁令10).
+            if prim.kind == PrimitiveKind.MEASURE and self._is_resolved(prim.channel):
+                # P0-D adaptive stop (opt-in): if NOTHING valuable is left in the
+                # batch (every remaining primitive is a resolved-channel MEASURE),
+                # end the macro so the pipeline can replan on the changed belief
+                # rather than spin through the tail. Guarded to keep any CLEAR or any
+                # unresolved (valuable) channel — so it never abandons full-clear work
+                # (§16 禁令10); it defers nothing that a replan won't re-propose.
+                if self.adaptive_stop and self._batch_tail_exhausted(prims, i):
+                    break
+                continue
             if not self._within_budget(state, prim, time_budget_s):
                 stopped = True
                 break
@@ -172,3 +208,33 @@ class MacroExecutor:
         else:
             cost_us = 0
         return (state.vt_us + cost_us) / 1_000_000.0 <= budget_s + 1e-9
+
+    # -- in-batch mask prune (P0-D, §7 "每 primitive obs 立即更新 belief") -------
+
+    def _is_resolved(self, channel: int) -> bool:
+        """True iff ``channel`` must not be scanned again, judged on the LIVE belief
+        and certificate (not the pre-batch snapshot). A channel resolved earlier IN
+        this same batch is then skipped instead of wastefully re-measured.
+
+        Two sound, read-only sources:
+          * belief status in ``_PRUNE_STATES`` (CLEARED via an opportunistic clear,
+            or LOCALIZED once a bearing drops MEC below the clear threshold) — the
+            exact non-scannable set the scheduler masks at selection time;
+          * ``absent_by_cardinality`` — the pigeonhole cascade: a positive detection
+            mid-batch that makes the 16th channel PRESENT leaves every remaining
+            UNKNOWN provably source-free (a pure ``len(_present) >= max_sources``
+            read; NOT the side-effecting ``is_absent_certified``, whose quadtree run
+            can't complete a *different* channel's coverage within one batch anyway).
+
+        Sound-direction only: UNKNOWN and DETECTED are never pruned (they still hold
+        coverage / refine value, §8), and an absent-by-cardinality channel has no
+        source to clear — so pruning can never drop a full-clear (§16 禁令10). This
+        declines to *measure*; it never marks belief ABSENT (禁止6 — that stays with
+        the manager's ``apply_certifications``). No belief -> never prune."""
+        if self.belief is None:
+            return False
+        if self.belief[channel].status in _PRUNE_STATES:
+            return True
+        if self.certificate is not None and self.certificate.absent_by_cardinality(channel):
+            return True
+        return False
