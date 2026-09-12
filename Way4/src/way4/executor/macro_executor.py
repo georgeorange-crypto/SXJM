@@ -152,6 +152,37 @@ class MacroExecutor:
             return True
         return False
 
+    # -- interactive stepping (Way3 homing fallback, §11) ------------------
+    # Single primitives with belief+certificate folding, for the HomingController's
+    # adaptive measure->decide->measure loop (which cannot be pre-expanded into one
+    # macro's primitive list). They reuse the same _do_measure/_do_clear folding as
+    # execute(), so a homed observation updates belief/certificate identically to a
+    # planned macro (Invariants B/D unchanged), and are budget-aware like execute().
+
+    def step_measure(
+        self, state: RobotState, point, channel: int, time_budget_s: float = float("inf")
+    ):
+        """Measure ``channel`` at ``point``; fold the outcome; advance state. Returns
+        ``(state, observation_or_None, done)``. ``observation`` is None and ``done`` is
+        True when the env hit its deadline or the budget blocks the measure — the
+        caller should stop."""
+        prim = Primitive(PrimitiveKind.MEASURE, (float(point[0]), float(point[1])), int(channel))
+        if not self._within_budget(state, prim, time_budget_s):
+            return state, None, True
+        state, pr, finished = self._do_measure(state, prim)
+        return state, pr.observation, finished
+
+    def step_clear(
+        self, state: RobotState, point, channel: int, time_budget_s: float = float("inf")
+    ):
+        """Clear ``channel`` at ``point``; fold on hit; advance state. Returns
+        ``(state, hit, done)``."""
+        prim = Primitive(PrimitiveKind.CLEAR, (float(point[0]), float(point[1])), int(channel))
+        if not self._within_budget(state, prim, time_budget_s, hit=True):
+            return state, False, True
+        state, pr, finished = self._do_clear(state, prim)
+        return state, pr.cleared, finished
+
     # -- primitives --------------------------------------------------------
 
     def _do_measure(self, state: RobotState, prim: Primitive):

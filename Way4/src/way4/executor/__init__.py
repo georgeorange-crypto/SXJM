@@ -6,6 +6,7 @@ from .macro_executor import (
     MacroExecutor,
     PrimitiveResult,
 )
+from .homing import HomingController
 from .way3_engine import (
     Way3EngineAdapter,
     load_way3_environment,
@@ -16,6 +17,7 @@ __all__ = [
     "ExecutionResult",
     "MacroExecutor",
     "PrimitiveResult",
+    "HomingController",
     "Way3EngineAdapter",
     "load_way3_environment",
 ]

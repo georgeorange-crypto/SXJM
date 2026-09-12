@@ -31,7 +31,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Set, Tuple
 
 from .coverage_gain import CoverageGainMap
-from .fallback import omni_fallback_anchors
+from .fallback import directional_fallback_anchors, omni_fallback_anchors
 from .hard_disc_cover import HardDiscCoverVerifier
 from ..belief import ChannelStatus
 from ..core import Observation
@@ -76,6 +76,7 @@ class CertificateManager:
     def __init__(
         self,
         n_channels: int = 20,
+        problem: int = 3,                    # 3 = omni only; 4 = directional mix (§6.9)
         max_sources: int = 16,               # cardinality upper bound (line 27)
         arena_radius: float = 1800.0,
         detection_radius: float = 1000.0,    # guaranteed R_eff lower bound (§6.1)
@@ -93,6 +94,7 @@ class CertificateManager:
         fallback_anchors: Optional[List[Point]] = None,
     ) -> None:
         self.n_channels = n_channels
+        self.problem = int(problem)
         self.max_sources = max_sources
         self.anchor_reached_tol = anchor_reached_tol
         self.eager_hard_verify = eager_hard_verify
@@ -113,9 +115,17 @@ class CertificateManager:
             )
             for s in rescue_cell_sizes
         ]
-        self.anchors: List[Point] = (
-            list(fallback_anchors) if fallback_anchors is not None else omni_fallback_anchors()
-        )
+        # Backbone anchors ARE the guaranteed-completion template, and it differs by
+        # problem (§6.9). P3: Way3's omni 1-cover (7 pts). P4: Way3's directional
+        # 3-cover (~31 pts), whose 'verify_three_cover' angular-gap<180° theorem is the
+        # ONLY sound hard absent-certificate for a possibly-directional source (禁止5:
+        # an omni NO_SIGNAL disc says nothing about a source facing away).
+        if fallback_anchors is not None:
+            self.anchors = list(fallback_anchors)
+        elif self.problem == 4:
+            self.anchors = directional_fallback_anchors(src_radius=arena_radius)
+        else:
+            self.anchors = omni_fallback_anchors()
         self.certs: Dict[int, OmniChannelCertificate] = {
             c: OmniChannelCertificate(channel=c) for c in range(1, n_channels + 1)
         }
@@ -177,7 +187,19 @@ class CertificateManager:
 
         ``force`` (EXIT / verification mode) always runs the quadtree and may
         escalate to the rescue cell sizes; otherwise the run is gated on the cheap
-        heuristic-ratio threshold and skipped once a scan set has already failed."""
+        heuristic-ratio threshold and skipped once a scan set has already failed.
+
+        **P4 soundness gate (禁止5, §6.9).** The arbitrary omni disc-cover rests on
+        "NO_SIGNAL@s ⟹ no source within B(s,1000)", which holds ONLY for an
+        omnidirectional source. A *directional* source inside B(s,1000) facing away
+        also returns NO_SIGNAL, so tiling the arena with omni discs can never certify
+        a possibly-directional channel absent. On P4 this disjunct is therefore
+        disabled outright — absence there comes only from the directional 3-cover
+        backbone (``legacy_backbone_complete``, whose ``verify_three_cover`` angular-gap
+        theorem IS sound for directional sources) or cardinality. This is the fix for
+        the seed-2000/2003 regression (a true directional source wrongly ABSENT-ed)."""
+        if self.problem == 4:
+            return False
         cert = self.certs[channel]
         if cert.present:
             return False
@@ -207,9 +229,17 @@ class CertificateManager:
         return ok
 
     def legacy_backbone_complete(self, channel: int) -> bool:
-        """Way3 guaranteed template: every fixed omni anchor scanned NO_SIGNAL for
-        this channel (Invariant C). Sound because the anchor discs cover D_1800
-        with margin (asserted by the quadtree in tests)."""
+        """Way3 guaranteed template: every fixed backbone anchor scanned NO_SIGNAL for
+        this channel (Invariant C). The backbone (and the theorem certifying it) is
+        problem-dependent (§6.9):
+
+          * **P3** — Way3's omni 1-cover (``omni_scan_points``); the anchor discs cover
+            D_1800 with margin (``verify_one_cover``, asserted by the quadtree in tests).
+          * **P4** — Way3's directional 3-cover (``directional_scan_points``); soundness
+            is the angular-gap theorem (``verify_three_cover``): from every potential
+            source point, the anchors within R_lo=1000 span a max angular gap < 180°, so
+            no 180° directional blind-spot can hide a source from all of them. This is
+            the ONLY sound absent-certificate when a source may be directional (禁止5)."""
         cert = self.certs[channel]
         if cert.present:
             return False

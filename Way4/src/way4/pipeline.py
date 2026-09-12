@@ -40,7 +40,7 @@ from .belief import BeliefState, ChannelStatus
 from .certificate import CertificateManager
 from .channels import ChannelScheduler, SchedulerMode
 from .core import AnalyticalCostModel, MacroActionType, MacroCandidate, RobotState
-from .executor import MacroExecutor
+from .executor import HomingController, MacroExecutor
 from .metrics import (
     ROLE_CLEAR,
     ROLE_COVERAGE,
@@ -101,6 +101,7 @@ class Way4Pipeline:
         self,
         env,
         n_channels: int = 20,
+        problem: int = 3,
         time_budget_s: float = float("inf"),
         max_steps: int = 2000,
         generator: Optional[CandidateGenerator] = None,
@@ -114,12 +115,15 @@ class Way4Pipeline:
     ) -> None:
         self.env = env
         self.n_channels = int(n_channels)
+        self.problem = int(problem)
         self.time_budget_s = float(time_budget_s)
         self.max_steps = int(max_steps)
         self.stall_limit = int(stall_limit)
 
         self.belief = BeliefState(n_channels=n_channels)
-        self.certificate = certificate or CertificateManager(n_channels=n_channels)
+        self.certificate = certificate or CertificateManager(
+            n_channels=n_channels, problem=problem
+        )
         self.cost = cost_model or AnalyticalCostModel()
         self.generator = generator or CandidateGenerator(cost_model=self.cost)
         self.planner = planner or RecedingHorizonPlanner()
@@ -131,6 +135,10 @@ class Way4Pipeline:
             opportunistic_clear=opportunistic_clear,
             batch_stop=batch_stop,
         )
+        # §11 Way3-homing fallback: the sound directional localizer, engaged only
+        # when the omni planner livelocks on a directional source (see run()). Way3
+        # params by default (clear_margin=14, orbit_radius=85, orbit_delta=42°, ...).
+        self._homing = HomingController(self.executor, self.belief)
         # §1.1: initial pose (0,0), initial measuring channel 1.
         self.state = initial_state or RobotState(0.0, 0.0, 1, 0)
 
@@ -205,6 +213,19 @@ class Way4Pipeline:
                 if key == self._last_progress_key:
                     self._stall += 1
                     if self._stall >= self.stall_limit:
+                        # §11 Way3-homing fallback before conceding. The omni NBV has
+                        # livelocked on a directional source: its viewpoints fall in
+                        # the source's blind 180° arc → NO_SIGNAL, and 禁止5 bars
+                        # shrinking F_c from a directional NO_SIGNAL, so the belief
+                        # freezes (the P4 no_progress_stall). Way3's homing uses only
+                        # positive info — it is sound for both problems (Way3 runs it
+                        # on P3 at 100%) — so engaging it here can only rescue an
+                        # episode that was already going to abort; a currently-passing
+                        # episode never stalls, so this is 禁止10-safe.
+                        if self._home_stuck_channels():
+                            self._stall = 0
+                            self._last_progress_key = self._progress_key()
+                            continue
                         error = "no_progress_stall"
                         break
                 else:
@@ -286,6 +307,42 @@ class Way4Pipeline:
         self.state = res.state
         self._steps += 1
         return True
+
+    # -- Way3-homing fallback (§11) ----------------------------------------
+
+    def _home_stuck_channels(self) -> bool:
+        """Run Way3's sound homing on every DETECTED (localized-but-not-cleared)
+        channel and report whether the belief advanced.
+
+        Invoked only from the no-progress guard (run()), i.e. when the omni planner
+        has livelocked — typically a directional source whose blind arc keeps
+        returning NO_SIGNAL. The ``HomingController`` drives the env through the
+        executor's folding path, so every measurement and clear updates belief +
+        certificate exactly as a planned macro would (it marks nothing itself; a
+        clear is a real env hit — Invariants B/D). ``home_and_clear`` respects the
+        time budget and stops on the env deadline.
+
+        Returns True iff ``_progress_key`` changed — a channel cleared, or a DETECTED
+        region shrank — so the loop resumes; False means truly stuck, and the caller
+        aborts honestly. (Diagnostics note: homing's primitives are folded into belief
+        but not re-walked by ``_account``, so ``n_measure``/``move_distance_m`` under-
+        count homing activity; ``virtual_time_s`` stays exact — it reads the advanced
+        env clock — and ``full_clear``/``resolved`` read the true belief.)"""
+        detected = [
+            c
+            for c in range(1, self.n_channels + 1)
+            if self.belief[c].status == ChannelStatus.DETECTED
+        ]
+        if not detected:
+            return False
+        before = self._progress_key()
+        for c in detected:
+            self.state, _cleared, finished = self._homing.home_and_clear(
+                c, self.state, self.time_budget_s
+            )
+            if finished:
+                break
+        return self._progress_key() != before
 
     # -- metrics ------------------------------------------------------------
 
