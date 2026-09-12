@@ -108,6 +108,7 @@ class Way4Pipeline:
         certificate: Optional[CertificateManager] = None,
         cost_model: Optional[AnalyticalCostModel] = None,
         opportunistic_clear: bool = True,
+        batch_stop: bool = False,
         initial_state: Optional[RobotState] = None,
         stall_limit: int = 16,
     ) -> None:
@@ -128,6 +129,7 @@ class Way4Pipeline:
             certificate=self.certificate,
             cost_model=self.cost,
             opportunistic_clear=opportunistic_clear,
+            batch_stop=batch_stop,
         )
         # §1.1: initial pose (0,0), initial measuring channel 1.
         self.state = initial_state or RobotState(0.0, 0.0, 1, 0)

@@ -74,12 +74,17 @@ class MacroExecutor:
         certificate=None,
         cost_model: Optional[AnalyticalCostModel] = None,
         opportunistic_clear: bool = False,
+        batch_stop: bool = False,
     ) -> None:
         self.env = env
         self.belief = belief
         self.certificate = certificate
         self.cost = cost_model or AnalyticalCostModel()
         self.opportunistic_clear = opportunistic_clear
+        # P0 #8 batch-internal STOP: when on, drop scans of already-resolved channels
+        # mid-batch (see execute / _scan_redundant). Default off => byte-identical
+        # legacy execution, so the shipped full-clear is unchanged (禁止10).
+        self.batch_stop = bool(batch_stop)
 
     # -- public API --------------------------------------------------------
 
@@ -87,7 +92,11 @@ class MacroExecutor:
         self, macro: MacroCandidate, state: RobotState, time_budget_s: float = float("inf")
     ) -> ExecutionResult:
         """Run ``macro`` from ``state``. Stops before any primitive whose predicted
-        cost would push the virtual clock past ``time_budget_s`` (超时即停)."""
+        cost would push the virtual clock past ``time_budget_s`` (超时即停).
+
+        With ``batch_stop`` on (P0 #8, default off) a scan primitive is dropped when
+        its channel is already resolved (see ``_scan_redundant``) — this removes only
+        provably-redundant measurements and never a CLEAR (禁止10)."""
         results: List[PrimitiveResult] = []
         finished = False
         stopped = False
@@ -96,6 +105,14 @@ class MacroExecutor:
             if prim.kind == PrimitiveKind.EXIT:
                 finished = True
                 break
+            # P0 #8 batch-internal STOP (behind batch_stop, default off): drop a scan
+            # whose channel the certificate already resolves. The predicate is exactly
+            # the §11 EXIT guard's (is_absent_certified force-run / is_resolved), so a
+            # skipped scan is one EXIT would already accept as done — it can no more
+            # lose a clear than EXIT can (禁止10). MEASURE only; a CLEAR is never dropped.
+            if (self.batch_stop and prim.kind == PrimitiveKind.MEASURE
+                    and self._scan_redundant(prim.channel)):
+                continue
             if not self._within_budget(state, prim, time_budget_s):
                 stopped = True
                 break
@@ -119,6 +136,21 @@ class MacroExecutor:
                     break
 
         return ExecutionResult(state=state, primitives=results, stopped_early=stopped, finished=finished)
+
+    def _scan_redundant(self, channel: int) -> bool:
+        """True iff re-measuring ``channel`` would add nothing because it is already
+        resolved — CLEARED/ABSENT_CERTIFIED in belief, or the certificate force-certifies
+        it absent right now. This is the exact predicate the §11 EXIT guard trusts
+        (pipeline ``_exit_allowed``): a channel good enough to EXIT on is good enough to
+        stop scanning. Read-only — it marks nothing (禁止6 absent-marking stays in the
+        pipeline's ``apply_certifications``); it only decides whether a batch scan is
+        redundant. Consulted only when ``batch_stop`` is on. Belief is checked first so
+        the (cheap) resolved case never pays the certificate force-run."""
+        if self.belief is not None and self.belief[channel].is_resolved:
+            return True
+        if self.certificate is not None and self.certificate.is_absent_certified(channel, force=True):
+            return True
+        return False
 
     # -- primitives --------------------------------------------------------
 
