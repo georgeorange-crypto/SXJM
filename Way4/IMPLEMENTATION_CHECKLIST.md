@@ -31,7 +31,7 @@
 - P0 主骨架：`[~]`。P0-000～P0-025 已有代码、测试或运行证据，包含 effective geometry、cardinality lifecycle、INITIALIZED/PRESENT_UNOBSERVED、统一 action mask、adaptive scan、事件总线和时间模型；剩余主要是 P0-026 的独立 SMDP learner 大规模效果证据及 P0-001 的全 consumer 收敛。
 - P1：`[~]`。NBV/VOI、routing/K_i、FutureCost、deterministic expert release 和 reward/value 契约已补齐；仍缺大规模消融、稳定训练和跨场景统计。
 - P2：`[~]`。特征向量、residual/candidate PPO、lower-bound 基础已实现；仍缺 LP/凸松弛、理论证明及稳定样本效率实验。
-- P3：`[~]`。`gesture_env` 下完整 pytest 曾通过（205 passed，12 skipped），并新增 soundness、seed audit、expert trace 与 P4 gate 结果；仍缺大样本 paired fair comparison 和全矩阵消融。
+- P3：`[~]`。`gesture_env` 下最新完整 pytest artifact 为 261 passed、12 skipped、0 failed，并新增 soundness、seed audit、expert trace、P4 gate 与 partial ablation 结果；仍缺大样本 paired fair comparison 和全矩阵消融。
 - P0 Gate：多个 gate 已完成或有强证据；端到端大样本比较及若干理论/训练 gate 仍保持 `[~]`，不把局部测试等同于最终研究完成。
 
 ## P0 — deterministic hard skeleton
