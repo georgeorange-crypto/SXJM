@@ -1,0 +1,10 @@
+{
+  "kind": "smdp-learner-smoke-only",
+  "n_transitions": 100,
+  "values": {
+    "SCAN": -5.999678051039756,
+    "CLEAR": -3.5
+  },
+  "clear_beats_scan": true,
+  "real_rollout_evidence": false
+}

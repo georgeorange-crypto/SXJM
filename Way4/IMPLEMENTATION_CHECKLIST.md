@@ -40,7 +40,7 @@
 | [x] | P0-023 | `ScanPlan` 已记录 `stop_reason`/`stop_value`/dwell cost；无正 VOI 时返回显式 STOP，且有测试。 |
 | [x] | P0-024 | `core/cost.py`、`tests/test_cost_model_gold.py`、`test_way4_gold_timing_vs_env.py` 覆盖速度 5、measure 5、switch 1 等时间模型。 |
 | [x] | P0-025 | 已有正式事件类型、pipeline 事件记录与 `EventBus` 全局/按类型订阅接口；新增 `Way4Pipeline(event_bus=...)` 外部只读发布通道，pipeline 外部订阅回归测试通过。 |
-| [~] | P0-026 | `OptionTransition` 支持 `transition_dataset()` JSON-ready 导出，且新增独立 `TabularSMDPLearner`，按 option 聚合 semi-Markov elapsed-time return，并覆盖 terminal/full-clear 奖励；真实环境 rollout 训练曲线与效果证据仍缺失。 |
+| [~] | P0-026 | `OptionTransition` 支持 `transition_dataset()` JSON-ready 导出，且新增独立 `TabularSMDPLearner`，按 option 聚合 semi-Markov elapsed-time return，并覆盖 terminal/full-clear 奖励；新增 100-transition `smdp_learner_smoke.json`，明确 `real_rollout_evidence=false` 且 CLEAR value 优于 SCAN，3 个 learner/smoke tests passed。真实环境 rollout 训练曲线与效果证据仍缺失。 |
 | [x] | P0-027 | `core/actions.py` 使用 macro action；`rl` 有 candidate/residual planner，未见 learner 直接输出 dx/dy/channel 的主路径。 |
 | [x] | P0-028 | `planner/candidates.py` 生成候选，scheduler/certificate 过滤，executor 执行；有 `test_candidate_generator.py`、`test_planner_mode.py` 等 mask 证据。 |
 
