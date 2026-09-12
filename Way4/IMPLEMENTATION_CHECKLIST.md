@@ -88,10 +88,10 @@
 | GATE-02 | [~] | 已有 `CardinalityState(p,z,u,q_min,q_max)` 与强制 presence 传播；`q_min=q_max` 的完整任务闭包仍未完成。 |
 | GATE-03 | [~] | 已加入 `PRESENT_UNOBSERVED`/`INITIALIZED` 并接入部分 scheduler/candidate/pipeline；所有 planner 分支尚未完全统一。 |
 | GATE-04 | [~] | 已有 D、MEC、area、kappa、principal axis；coverage debt/initialization/robot distance 尚未形成统一 readiness 摘要。 |
-| GATE-05 | [~] | 有 candidate/refine/clear/coverage 基础；不是五类完整 macro。 |
+| GATE-05 | [x] | `MacroActionType` 与 `CandidateGenerator`/executor 已覆盖并测试五类正式 macro：EXPLORE、INITIALIZE、REFINE、VERIFY、CLEAR；对应 candidate-generator、macro-executor 回归通过。 |
 | GATE-06 | [~] | 已有 per-channel coverage debt/uncovered area 状态与测试；仍是 planner-only 栅格近似。 |
 | GATE-07 | [~] | `AdaptiveScanSession`、`execute_adaptive()` 和 `Way4Pipeline(adaptive_scan=True)` 已存在并有测试；默认 benchmark 仍使用 legacy batch，尚缺公平评测。 |
-| GATE-08 | [~] | STOP 类型和测试存在，但不等价于完整 waypoint STOP policy。 |
+| GATE-08 | [x] | `SpatialStopGenerator` 生成 waypoint-local `STOP` bundle，`SpatialStop.primitives()` 执行 batch measure + folded clear；`test_spatial_stops.py` 与 receding-horizon STOP outcome 覆盖。 |
 | GATE-09 | [x] | `core/cost.py` 与 gold timing tests。 |
 | GATE-10 | [~] | certificate/mask/fallback 基础存在；全 invariant 运行证据不足。 |
 | GATE-11 | [x] | `executor/homing.py`、`certificate/fallback.py`、pipeline no-progress/fallback 逻辑和对应 tests。 |
