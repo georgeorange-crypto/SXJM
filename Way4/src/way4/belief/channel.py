@@ -140,6 +140,11 @@ class ChannelBelief:
     first_detect_time: Optional[float] = None
     localized_time: Optional[float] = None
     cleared_time: Optional[float] = None
+    # Planning-only raster cache.  It is invalidated whenever observations
+    # change the effective feasible set; safety geometry remains uncached.
+    _effective_grid_cache: Dict[float, List[Point]] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     # -- observation intake (DESIGN.md §5) ---------------------------------
 
@@ -147,6 +152,7 @@ class ChannelBelief:
         """P3 NO_SIGNAL @ point. Appends a negative exclusion disc; never makes
         the channel PRESENT and never certifies absence (Invariants A/B)."""
         self.negative_discs.append(ExclusionDisc(point, self.detect_lower_bound))
+        self._effective_grid_cache.clear()
         self.scan_count += 1
         self.last_scan_time = max(self.last_scan_time, time)
         self._update_inertia_summary()
@@ -166,14 +172,20 @@ class ChannelBelief:
 
     def _effective_grid(self, spacing: float = 30.0) -> List[Point]:
         """Deterministic interior samples for the non-convex effective set."""
+        spacing = float(spacing)
+        cached = self._effective_grid_cache.get(spacing)
+        if cached is not None:
+            return cached
         r = self.arena_radius
         n = int(ceil(r / spacing))
-        return [
+        points = [
             (ix * spacing, iy * spacing)
             for ix in range(-n, n + 1)
             for iy in range(-n, n + 1)
             if self.contains_possible_source((ix * spacing, iy * spacing))
         ]
+        self._effective_grid_cache[spacing] = points
+        return points
 
     def effective_region(self, spacing: float = 30.0) -> EffectiveRegion:
         """Return an explicit non-convex region for planner queries."""
@@ -234,6 +246,7 @@ class ChannelBelief:
     def record_bearing(self, point: Point, svd_deg: float, time: float = 0.0) -> None:
         """P3 positive detection with bearing ``svd_deg`` @ point."""
         self.bearings.append(BearingObs(point, norm_deg(svd_deg), time))
+        self._effective_grid_cache.clear()
         self.scan_count += 1
         self.last_scan_time = max(self.last_scan_time, time)
         if self.first_detect_time is None:
@@ -244,6 +257,7 @@ class ChannelBelief:
         """'near' @ point (<=5 m, in-arc): strongest positive info (DESIGN.md §5,
         triggers opportunistic clear in the safety layer)."""
         self.near_points.append(point)
+        self._effective_grid_cache.clear()
         self.scan_count += 1
         self.last_scan_time = max(self.last_scan_time, time)
         if self.first_detect_time is None:

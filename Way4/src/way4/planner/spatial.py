@@ -228,8 +228,10 @@ class SpatialStopGenerator:
         stop.route_synergy = stop.route_saving
         stop.n_measure_services = len(stop.scan_channels)
         stop.n_clear_services = len(stop.clear_channels)
+        stop.task_cluster_size = int(stop.n_services)
         stop.service_density = stop.n_services / max(1.0, stop.expected_time)
         stop.meta["bundle_members"] = cl.n_members
+        stop.meta["task_cluster_size"] = int(stop.task_cluster_size)
         stop.meta["bundle_clears"] = len(clear_channels)
         stop.meta["bundle_internal_travel"] = float(sum(
             dist(target, p) for p in members if p != target

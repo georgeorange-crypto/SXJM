@@ -24,6 +24,8 @@ from .features import (
     GLOBAL_FEATURE_DIM,
     evaluation_features,
     feature_matrix,
+    candidate_time_debt_block,
+    evaluation_features_v3,
 )
 from .residual_planner import RLResidualPlanner
 from .sampling_planner import Decision, SamplingResidualPlanner, expert_dataset
@@ -35,10 +37,14 @@ from .train import (
     episode_return,
 )
 from .candidate_ppo import (CandidateActorCritic, CandidateChannelFeatures,
+                            HierarchicalPolicy,
                             SpatialCandidate, CandidatePPOTrainer, PPOConfig,
                             compute_gae, EdgeAwareCandidateGNN, MODEL_SCHEMA)
 from .candidate_rollout import CandidateTransition, finish_episode, collate
 from .smdp import SMDPTrainConfig, TabularSMDPLearner
+from .hard_case_mining import HARD_CASE_TAGS, choose_seed, hard_case_weight, prioritized_case_weights
+from .seed_splits import SeedSplits
+from .training_protocol import gamma_lambda_sweep
 
 __all__ = [
     "CANDIDATE_FEATURE_DIM",
@@ -46,6 +52,8 @@ __all__ = [
     "FEATURE_DIM",
     "evaluation_features",
     "feature_matrix",
+    "candidate_time_debt_block",
+    "evaluation_features_v3",
     "ResidualScorer",
     "RLResidualPlanner",
     "SamplingResidualPlanner",
@@ -57,6 +65,7 @@ __all__ = [
     "episode_return",
     "CandidateActorCritic",
     "CandidateChannelFeatures",
+    "HierarchicalPolicy",
     "SpatialCandidate",
     "CandidatePPOTrainer",
     "PPOConfig",
@@ -68,4 +77,7 @@ __all__ = [
     "collate",
     "SMDPTrainConfig",
     "TabularSMDPLearner",
+    "HARD_CASE_TAGS", "hard_case_weight", "prioritized_case_weights", "choose_seed",
+    "SeedSplits",
+    "gamma_lambda_sweep",
 ]

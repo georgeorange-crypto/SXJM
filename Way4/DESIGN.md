@@ -2,6 +2,11 @@
 
 ## 最终算法命名
 
+Way4 的正式优化目标是：在 `FullClear=1`、`IllegalClear=0`、
+`SafetyViolation=0` 的硬约束下最小化总时间。Candidate-PPO 只接收数学层
+生成的合法候选并返回候选索引；安全判断、坐标生成、证书和清除执行仍由数学
+规划与执行层负责。
+
 论文与评测统一使用 **Certificate-Guided Active Belief Planning**（基于集合
 信念与完备性证书的主动滚动规划）。RL 组件统一称为 **Learning-Augmented
 Planner**，不将最终算法命名为 PPO Method。

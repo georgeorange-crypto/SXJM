@@ -96,6 +96,8 @@ def test_bundles_colocated_scans_with_union_channels():
     assert stops[0].scan_channels == (1, 2, 3)
     assert stops[0].action_type == MacroActionType.STOP
     assert stops[0].expected_time > 0.0
+    assert stops[0].task_cluster_size == stops[0].n_services
+    assert stops[0].meta["task_cluster_size"] == stops[0].n_services
 
 
 def test_passthrough_is_non_destructive():

@@ -53,9 +53,12 @@ from .metrics import (
     RouteEvent,
     compute_route_metrics,
     compute_efficiency_metrics,
+    route_regret,
 )
-from .planner import CandidateGenerator, RecedingHorizonPlanner, SpatialStopGenerator, RemainingTaskPool
-from .routing import RouteEstimator, ServiceOpportunity, UnifiedRoutePlanner
+from .planner import (CandidateGenerator, RecedingHorizonPlanner, SpatialStopGenerator,
+                      RemainingTaskPool, FocusController, EndgameController)
+from .planner.future_cost import build_cost_view
+from .routing import RouteEstimator, ServiceOpportunity, UnifiedRoutePlanner, RouteCleanupScheduler
 from .sensing import MinimaxNBV
 from .analysis import summarize_decision_trace
 
@@ -99,6 +102,9 @@ class EpisodeResult:
     clear_distance_m: float = 0.0
     n_longjump: int = 0
     n_crossing: int = 0
+    self_intersection_count: int = 0
+    avoidable_crossing_count: int = 0
+    avoidable_crossing_m: float = 0.0
     n_empty_scan: int = 0
     source_diagnostics: dict = field(default_factory=dict)
     longest_waiting_sources: list = field(default_factory=list)
@@ -115,6 +121,7 @@ class EpisodeResult:
     planner_version: str = "way4-route-math-v1"
     metric_schema_version: str = "way4-metrics-v2"
     decision_trace: list = field(default_factory=list)
+    decision_audit: list = field(default_factory=list)
     decision_summary: dict = field(default_factory=dict)
     illegal_clear: int = 0
     safety_violation: int = 0
@@ -124,6 +131,12 @@ class EpisodeResult:
     backtrack_m: float = 0.0
     repeated_edge_m: float = 0.0
     unnecessary_return_m: float = 0.0
+    scan_batch_count: int = 0
+    mean_batch_size: float = 0.0
+    median_batch_size: float = 0.0
+    max_batch_size: int = 0
+    early_stop_count: int = 0
+    batch_stop_reason: list = field(default_factory=list)
 
     @property
     def full_clear(self) -> bool:
@@ -148,10 +161,10 @@ class Way4Pipeline:
         certificate: Optional[CertificateManager] = None,
         cost_model: Optional[AnalyticalCostModel] = None,
         opportunistic_clear: bool = True,
-        batch_stop: bool = False,
+        batch_stop: bool = True,
         initial_state: Optional[RobotState] = None,
         stall_limit: int = 16,
-        adaptive_scan: bool = False,
+        adaptive_scan: bool = True,
         routing_strategy: str = "tspn",
         nbv_objective: str = "minimax",
         coverage_strategy: str = "active_fallback",
@@ -222,7 +235,10 @@ class Way4Pipeline:
         # Planner-owned WAIT_FOR_ROUTE state. This registry never writes belief
         # statuses; it is safe to discard/rebuild between replans.
         self.task_pool = RemainingTaskPool()
+        self.focus = FocusController()
+        self.endgame = EndgameController(3) if planner_mode == "final_ppo" else None
         self.unified_route = UnifiedRoutePlanner()
+        self.route_cleanup = RouteCleanupScheduler(decision_period=5, distance_period_m=750.0)
         self.last_unified_route = None
         if planner_mode == "final_ppo" and planner is None:
             self.planner = CandidatePPOPlanner(self.planner)
@@ -263,6 +279,7 @@ class Way4Pipeline:
         self._start_pos = (float(self.state.x), float(self.state.y))
         # no-progress guard state
         self._last_progress_key: Optional[Tuple] = None
+        self._plan_estimate_before_s = None
         self._stall = 0
         self._adaptive_recovery_used = False
         self.events: List[Way4Event] = []
@@ -326,8 +343,35 @@ class Way4Pipeline:
                 status_before = {
                     c: self.belief[c].status for c in range(1, self.n_channels + 1)
                 }
+                # Decision-level progress snapshot (B03-B05).  These values are
+                # audit evidence only; safety and planning continue to use the
+                # authoritative belief/certificate objects.
+                progress_before = {
+                    c: {
+                        "status": self.belief[c].status.value,
+                        "area": float(getattr(self.belief[c], "area", float("inf"))),
+                        "mec_radius": float(getattr(self.belief[c], "mec_radius", float("inf"))),
+                        "coverage": float(self.certificate.heuristic_coverage_ratio(c)),
+                    }
+                    for c in range(1, self.n_channels + 1)
+                }
+                hypothesis_mass_before = sum(
+                    int(self.hypotheses.channels[c].omni_alive.sum()) +
+                    int(self.hypotheses.channels[c].dir_alive.sum())
+                    for c in self.hypotheses.channels
+                ) if self.hypotheses is not None else 0
                 start_belief = tuple(sorted((c, b.value) for c, b in status_before.items()))
                 start_time = self.state.virtual_time_s
+                position_before = (float(self.state.x), float(self.state.y))
+                route_metrics_before = compute_route_metrics(self._route_events, self._start_pos)
+                coverage_before = {
+                    int(c): float(self.certificate.heuristic_coverage_ratio(int(c)))
+                    for c in (macro.scan_channels or ())
+                }
+                predicted_coverage_gain = sum(
+                    float(self.certificate.coverage_gain(int(c), macro.target))
+                    for c in (macro.scan_channels or ())
+                )
                 if self.time_budget_s != float("inf"):
                     remaining = self.time_budget_s - start_time
                     if remaining <= max(1.0, float(macro.expected_time)) * 1.10:
@@ -338,7 +382,7 @@ class Way4Pipeline:
                         ))
                 if self.adaptive_scan and macro.is_scan and macro.scan_channels:
                     session = AdaptiveScanSession(
-                        ChannelScheduler(), macro.target, self.belief, self.certificate,
+                        self.channel_scheduler, macro.target, self.belief, self.certificate,
                         self.state.channel, mode=self._scan_mode(), min_value=0.0,
                     )
                     res = self.executor.execute_adaptive(
@@ -360,6 +404,7 @@ class Way4Pipeline:
                 time_buckets_before = (self._time_move_s, self._time_measure_s,
                                        self._time_switch_s, self._time_clear_s)
                 self._account(macro, res, status_before)
+                route_metrics_after = compute_route_metrics(self._route_events, self._start_pos)
                 # Complete the selected decision record with realised outcome.
                 # This is intentionally post-execution and diagnostic only.
                 selected_rows = [r for r in self.decision_trace
@@ -495,22 +540,136 @@ class Way4Pipeline:
                 else:
                     self._decisions_since_progress += 1
                     self._no_progress_time_s += max(0.0, float(self.state.virtual_time_s - start_time))
+                current_measurements = [
+                    p for p in self.primitive_trace[-len(res.primitives):]
+                    if p.get("action") == "measure"
+                ] if res.primitives else []
+                prior_measurements = self.primitive_trace[:-len(res.primitives)] if res.primitives else self.primitive_trace
+                repeat_measure = any(
+                    any(int(old.get("channel", -1)) == int(cur.get("channel", -2))
+                        and _dist(tuple(old.get("target", (0, 0))), tuple(cur.get("target", (0, 0)))) <= 5.0
+                        for old in prior_measurements if old.get("action") == "measure")
+                    for cur in current_measurements)
+                progress_after = {
+                    c: {
+                        "status": self.belief[c].status.value,
+                        "area": float(getattr(self.belief[c], "area", float("inf"))),
+                        "mec_radius": float(getattr(self.belief[c], "mec_radius", float("inf"))),
+                        "coverage": float(self.certificate.heuristic_coverage_ratio(c)),
+                    }
+                    for c in range(1, self.n_channels + 1)
+                }
+                hypothesis_mass_after = sum(
+                    int(self.hypotheses.channels[c].omni_alive.sum()) +
+                    int(self.hypotheses.channels[c].dir_alive.sum())
+                    for c in self.hypotheses.channels
+                ) if self.hypotheses is not None else 0
+                finite_area_reduction = sum(
+                    max(0.0, progress_before[c]["area"] - progress_after[c]["area"])
+                    for c in progress_before
+                    if isfinite(progress_before[c]["area"]) and isfinite(progress_after[c]["area"])
+                )
+                mec_reduction = sum(
+                    max(0.0, progress_before[c]["mec_radius"] - progress_after[c]["mec_radius"])
+                    for c in progress_before
+                    if isfinite(progress_before[c]["mec_radius"]) and isfinite(progress_after[c]["mec_radius"])
+                )
+                coverage_gain = sum(max(0.0, progress_after[c]["coverage"] - progress_before[c]["coverage"])
+                                    for c in progress_before)
+                actual_coverage_gain = sum(
+                    max(0.0, float(self.certificate.heuristic_coverage_ratio(c)) - coverage_before.get(c, 0.0))
+                    for c in coverage_before
+                )
+                coverage_overlap_ratio = (
+                    max(0.0, min(1.0, 1.0 - actual_coverage_gain / predicted_coverage_gain))
+                    if predicted_coverage_gain > 0.0 else 0.0
+                )
+                status_transitions = [
+                    {"channel": c, "before": progress_before[c]["status"],
+                     "after": progress_after[c]["status"]}
+                    for c in progress_before
+                    if progress_before[c]["status"] != progress_after[c]["status"]
+                ]
+                batch_stop_reason = ""
+                if any(getattr(p.observation, "is_near", False) for p in res.primitives):
+                    batch_stop_reason = "near"
+                elif any(getattr(p.observation, "is_bearing", False) for p in res.primitives):
+                    batch_stop_reason = "strong_bearing"
+                elif any(item["after"] == ChannelStatus.LOCALIZED.value
+                         for item in status_transitions):
+                    batch_stop_reason = "localized"
+                elif coverage_gain > 0.0:
+                    batch_stop_reason = "certificate_gain"
+                elif any(bool(p.cleared) for p in res.primitives):
+                    batch_stop_reason = "clear_ready"
+                elif macro.is_scan and macro.scan_channels and len(current_measurements) < len(macro.scan_channels):
+                    batch_stop_reason = "replan"
+                elif macro.is_scan:
+                    batch_stop_reason = "low_marginal_value"
+                plan_after_s = None
+                try:
+                    plan_after_s = float(self.planner.fce.estimate(
+                        build_cost_view(self.belief, self.certificate, self.state)).total)
+                except Exception:
+                    pass
+                regret_s = None
+                if self._plan_estimate_before_s is not None and plan_after_s is not None:
+                    regret_s = float(self.state.virtual_time_s - start_time) + plan_after_s - self._plan_estimate_before_s
+                delta_t = float(self.state.virtual_time_s - start_time)
+                delta_buckets = sum((self._time_move_s - time_buckets_before[0],
+                                     self._time_measure_s - time_buckets_before[1],
+                                     self._time_switch_s - time_buckets_before[2],
+                                     self._time_clear_s - time_buckets_before[3]))
                 self.decision_audit.append({
                     "step": int(self._steps), "virtual_time_before": float(start_time),
                     "virtual_time_after": float(self.state.virtual_time_s),
-                    "delta_virtual_time_s": float(self.state.virtual_time_s - start_time),
+                    "delta_virtual_time_s": delta_t,
                     "delta_move_time_s": float(self._time_move_s - time_buckets_before[0]),
                     "delta_measure_time_s": float(self._time_measure_s - time_buckets_before[1]),
                     "delta_switch_time_s": float(self._time_switch_s - time_buckets_before[2]),
                     "delta_clear_time_s": float(self._time_clear_s - time_buckets_before[3]),
+                    "delta_accounting_error_s": delta_t - delta_buckets,
                     "delta_move_distance_m": float(self._move_m - move_before),
+                    "position_before": [position_before[0], position_before[1]],
+                    "position_after": [float(self.state.x), float(self.state.y)],
+                    "backtrack_m": float(route_metrics_after.backtrack_m - route_metrics_before.backtrack_m),
+                    "repeated_edge_m": float(route_metrics_after.repeated_edge_m - route_metrics_before.repeated_edge_m),
+                    "unnecessary_return_m": float(route_metrics_after.unnecessary_return_m - route_metrics_before.unnecessary_return_m),
+                    "detour_time_s": float(macro.meta.get("detour_time_s", 0.0)),
                     "no_progress": not progressed,
+                    "repeat_measure": bool(repeat_measure and not progressed),
+                    "measure_count": len(current_measurements),
+                    "batch_stop_reason": batch_stop_reason,
+                    "route_plan_before_s": self._plan_estimate_before_s,
+                    "route_plan_after_s": plan_after_s,
+                    "route_regret_s": regret_s,
                     "time_since_last_progress_s": float(self.state.virtual_time_s - self._last_progress_time_s),
                     "distance_since_last_progress_m": float(self._move_m - self._last_progress_distance_m),
                     "decisions_since_last_progress": int(self._decisions_since_progress),
+                    "delta_clear": int(sum(
+                        progress_after[c]["status"] == ChannelStatus.CLEARED.value and
+                        progress_before[c]["status"] != ChannelStatus.CLEARED.value
+                        for c in progress_before)),
+                    "delta_certificate": float(coverage_gain),
+                    "coverage_gain_predicted": float(predicted_coverage_gain),
+                    "coverage_gain_actual": float(actual_coverage_gain),
+                    "coverage_overlap_ratio": float(coverage_overlap_ratio),
+                    "delta_localization_area": float(finite_area_reduction),
+                    "delta_mec_radius": float(mec_reduction),
+                    "delta_hypothesis": float(hypothesis_mass_before - hypothesis_mass_after),
+                    "status_transition": status_transitions,
+                    "channel_status_before": {str(c): progress_before[c]["status"]
+                                               for c in progress_before},
+                    "channel_status_after": {str(c): progress_after[c]["status"]
+                                              for c in progress_after},
+                    "progress_before": progress_before,
+                    "progress_after": progress_after,
                 })
                 if hasattr(self.planner, "record_progress"):
-                    self.planner.record_progress(key)
+                    self.planner.record_progress(
+                        key, action_signature=(macro.action_type.value,
+                                               round(float(macro.target[0]), 3),
+                                               round(float(macro.target[1]), 3)))
                 if key == self._last_progress_key:
                     self._stall += 1
                     if self._stall >= self.stall_limit:
@@ -518,7 +677,7 @@ class Way4Pipeline:
                         # deterministic batch policy one recovery window before
                         # declaring a genuine stall. This never mutates belief
                         # or certificates; only the batching policy changes.
-                        if self.adaptive_scan and not self._adaptive_recovery_used:
+                        if self.stall_limit > 8 and self.adaptive_scan and not self._adaptive_recovery_used:
                             self.adaptive_scan = False
                             self._adaptive_recovery_used = True
                             self._stall = 0
@@ -533,7 +692,7 @@ class Way4Pipeline:
                         # on P3 at 100%) — so engaging it here can only rescue an
                         # episode that was already going to abort; a currently-passing
                         # episode never stalls, so this is 禁止10-safe.
-                        if self._home_stuck_channels():
+                        if self.stall_limit > 8 and self._home_stuck_channels():
                             self._stall = 0
                             self._last_progress_key = self._progress_key()
                             continue
@@ -560,6 +719,8 @@ class Way4Pipeline:
         resolved = 0
         cov = 0.0
         mec = 0.0
+        area = 0.0
+        hypothesis_mass = 0
         anchors = 0
         for c in range(1, self.n_channels + 1):
             b = self.belief[c]
@@ -570,7 +731,14 @@ class Way4Pipeline:
                 anchors += self.certificate.backbone_anchor_progress(c)
             elif b.status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED) and b.mec_radius != float("inf"):
                 mec += b.mec_radius
-        return (resolved, self.certificate.present_count(), round(cov, 6), round(mec, 2), anchors)
+            if isfinite(float(getattr(b, "area", float("inf")))):
+                area += max(0.0, float(getattr(b, "area", 0.0)))
+            if self.hypotheses is not None:
+                h = self.hypotheses.channels.get(c)
+                if h is not None:
+                    hypothesis_mass += int(h.omni_alive.sum()) + int(h.dir_alive.sum())
+        return (resolved, self.certificate.present_count(), round(cov, 6),
+                round(mec, 2), round(area, 2), hypothesis_mass, anchors)
 
     def _scan_mode(self) -> SchedulerMode:
         """EARLY while UNKNOWN channels remain broadly unexplored; VERIFICATION once
@@ -591,6 +759,13 @@ class Way4Pipeline:
         cands = self.generator.generate(
             self.belief, self.certificate, self.state, scan_mode=self._scan_mode()
         )
+        if self.endgame is not None:
+            unresolved = sum(not self.belief[c].is_resolved
+                             for c in range(1, self.n_channels + 1))
+            selected_endgame = self.endgame.select(self.state.pos, cands, unresolved)
+            if selected_endgame is not None:
+                selected_endgame.meta["endgame_solver"] = "exact_open_route"
+                return selected_endgame
         # Build a conservative open-route opportunity view from the current
         # validated candidate pool. Waiting only annotates future service points;
         # the legacy candidates remain available to the math planner.
@@ -609,6 +784,18 @@ class Way4Pipeline:
         route_plan = self.unified_route.plan(self.state.pos, opportunities)
         self.last_unified_route = route_plan
         route = [self.state.pos] + list(route_plan.order)
+        cleanup_applied = False
+        if self.route_cleanup.due(decision_count=self._steps,
+                                  distance_m=self._move_m,
+                                  major_belief_change=bool(self._steps and
+                                                           self.decision_audit and
+                                                           self.decision_audit[-1].get("status_transition"))):
+            cleaned, _cost, changed = self.unified_route.cleanup_route(route, start=self.state.pos)
+            if changed:
+                route = cleaned
+                cleanup_applied = True
+            self.route_cleanup.mark_cleaned(decision_count=self._steps,
+                                            distance_m=self._move_m)
         dedicated = {}
         for c in cands:
             ch = c.meta.get("refine_channel")
@@ -631,6 +818,9 @@ class Way4Pipeline:
                 cand.meta["assigned_wait_channels"] = tuple(
                     ch for ch, point in assignments.items() if point == cand.target
                 )
+        if cleanup_applied:
+            for cand in cands:
+                cand.meta["route_cleanup_applied"] = True
         if not cands:
             return None
         # EXIT guard (§11): drop any EXIT the planner proposes unless the certificate
@@ -640,13 +830,38 @@ class Way4Pipeline:
             cands = [c for c in cands if c.action_type != MacroActionType.EXIT]
             if not cands:
                 return None
+        # K01/K02: activate FOCUS only from an explicit candidate commitment
+        # estimate, and retain only that channel while no exit reason exists.
+        if self.focus.state.active:
+            watchdog = bool(getattr(self.planner, "watchdog", None) and
+                            self.planner.watchdog.fallback)
+            if self.focus.may_exit(no_progress=self._decisions_since_progress >= 3,
+                                   watchdog=watchdog):
+                self.focus.clear()
+            else:
+                focused = [c for c in cands
+                            if int(c.meta.get("refine_channel", -1)) == self.focus.state.channel
+                            or c.action_type == MacroActionType.EXIT]
+                if focused:
+                    cands = focused
         for cand in cands:
             ch = cand.meta.get("refine_channel") or cand.clear_channel
             if ch is not None:
                 first = self.belief[int(ch)].first_detect_time
                 if first is not None:
                     cand.meta["task_age_s"] = max(0.0, self.state.virtual_time_s - first)
+        for cand in cands:
+            ch = cand.meta.get("refine_channel")
+            if ch is not None:
+                p = float(cand.meta.get("p_completion", 0.0))
+                if p > 0.0:
+                    self.focus.consider(int(ch), p, max(float(cand.expected_time), 1e-9))
         result = self.planner.plan(self.belief, self.certificate, self.state, cands)
+        try:
+            self._plan_estimate_before_s = float(self.planner.fce.estimate(
+                build_cost_view(self.belief, self.certificate, self.state)).total)
+        except Exception:
+            self._plan_estimate_before_s = None
         selected = result.best
         evaluations = {id(e.candidate): e for e in getattr(result, "evaluations", ())}
         route_positions = {tuple(p): i for i, p in enumerate(route_plan.order)}
@@ -836,6 +1051,21 @@ class Way4Pipeline:
         )
         success = exited and resolved == self.n_channels and error is None
         rm = compute_route_metrics(self._route_events, self._start_pos)
+        batch_sizes = [int(a.get("measure_count", 0)) for a in self.decision_audit
+                       if "measure_count" in a]
+        stop_reasons = [str(a["batch_stop_reason"]) for a in self.decision_audit
+                        if a.get("batch_stop_reason")]
+        from .metrics import compute_batch_metrics
+        batch_metrics = compute_batch_metrics(batch_sizes, stop_reasons)
+        regret_waste = sum(max(0.0, float(a.get("route_regret_s") or 0.0))
+                           for a in self.decision_audit)
+        predicted_coverage = sum(float(a.get("coverage_gain_predicted") or 0.0)
+                                 for a in self.decision_audit)
+        actual_coverage = sum(float(a.get("coverage_gain_actual") or 0.0)
+                              for a in self.decision_audit)
+        # The overlap diagnostic is bounded against the accumulated heuristic
+        # gain; it is deliberately not used by the hard certificate gate.
+        coverage_overlap = max(0.0, predicted_coverage - actual_coverage)
         efficiency = compute_efficiency_metrics(
             total_time_s=float(self.state.virtual_time_s),
             no_progress_time_s=float(self._no_progress_time_s),
@@ -843,8 +1073,14 @@ class Way4Pipeline:
             backtrack_m=rm.backtrack_m,
             repeated_edge_m=rm.repeated_edge_m,
             unnecessary_return_m=rm.unnecessary_return_m,
+            self_intersection_count=rm.self_intersection_count,
+            avoidable_crossing_count=rm.avoidable_crossing_count,
+            avoidable_crossing_m=rm.avoidable_crossing_m,
             scan_time_s=self._time_measure_s + self._time_switch_s,
             useful_observations=max(0, self._n_measure - self._n_empty_scan),
+            coverage_overlap_gain=coverage_overlap,
+            coverage_total_gain=predicted_coverage,
+            route_regret_waste_s=regret_waste,
         )
         diagnostics = {}
         for c in range(1, self.n_channels + 1):
@@ -896,6 +1132,7 @@ class Way4Pipeline:
             clear_distance_m=rm.clear_distance,
             n_longjump=rm.n_longjump,
             n_crossing=rm.n_crossing,
+            self_intersection_count=rm.self_intersection_count,
             n_empty_scan=self._n_empty_scan,
             source_diagnostics=diagnostics,
             longest_waiting_sources=top5,
@@ -922,6 +1159,12 @@ class Way4Pipeline:
             backtrack_m=rm.backtrack_m,
             repeated_edge_m=rm.repeated_edge_m,
             unnecessary_return_m=rm.unnecessary_return_m,
+            scan_batch_count=batch_metrics["scan_batch_count"],
+            mean_batch_size=batch_metrics["mean_batch_size"],
+            median_batch_size=batch_metrics["median_batch_size"],
+            max_batch_size=batch_metrics["max_batch_size"],
+            early_stop_count=batch_metrics["early_stop_count"],
+            batch_stop_reason=batch_metrics["batch_stop_reason"],
         )
 
 

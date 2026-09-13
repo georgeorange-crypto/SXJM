@@ -27,6 +27,7 @@ except Exception:  # pragma: no cover
 if not _TORCH:  # pragma: no cover
     EdgeAwareCandidateGNN = None
     CandidateActorCritic = None
+    HierarchicalPolicy = None
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,24 @@ class SpatialCandidate:
 
 
 if _TORCH:
+    class HierarchicalPolicy(nn.Module):
+        """Optional AB policy: choose waypoint, then channel/STOP at it."""
+        def __init__(self, hidden: int = 128, n_channels: int = 20):
+            super().__init__()
+            self.n_channels = int(n_channels)
+            self.spatial_head = nn.Linear(hidden, 1)
+            self.channel_head = nn.Linear(hidden, self.n_channels + 1)
+
+        def forward(self, candidate_tokens, *, candidate_mask=None):
+            spatial_logits = self.spatial_head(candidate_tokens).squeeze(-1)
+            if candidate_mask is not None:
+                spatial_logits = spatial_logits.masked_fill(~candidate_mask, -1e9)
+            return spatial_logits, self.channel_head(candidate_tokens)
+
+        @staticmethod
+        def joint_log_probability(spatial_logp, channel_logp):
+            return spatial_logp + channel_logp
+
     class EdgeAwareCandidateGNN(nn.Module):
         """Permutation-equivariant message passing over SpatialStop nodes.
 
@@ -129,8 +148,15 @@ if _TORCH:
         candidates supplied by the deterministic planner.
         """
         def __init__(self, candidate_dim: int, channel_dim: int = 10,
-                     hidden: int = 128, heads: int = 4, layers: int = 2):
+                     hidden: int = 128, heads: int = 4, layers: int = 2,
+                     critic_pooling: str = "mean", global_time_dim: int = 0):
             super().__init__()
+            if critic_pooling not in ("mean", "mean_max"):
+                raise ValueError("critic_pooling must be 'mean' or 'mean_max'")
+            self.critic_pooling = critic_pooling
+            self.global_time_dim = int(global_time_dim)
+            if self.global_time_dim < 0:
+                raise ValueError("global_time_dim must be non-negative")
             self.candidate_dim, self.channel_dim, self.hidden = candidate_dim, channel_dim, hidden
             self.cand = nn.Linear(10, hidden)
             self.chan = nn.Linear(channel_dim, hidden)
@@ -145,9 +171,11 @@ if _TORCH:
             self.candidate_graph = EdgeAwareCandidateGNN(hidden, steps=layers)
             self.cross = nn.MultiheadAttention(hidden, h, batch_first=True)
             self.actor = nn.Sequential(nn.LayerNorm(hidden), nn.Linear(hidden, 1))
-            self.critic = nn.Sequential(nn.LayerNorm(hidden), nn.Linear(hidden, 1))
+            critic_in = hidden if critic_pooling == "mean" else 2 * hidden
+            critic_in += self.global_time_dim
+            self.critic = nn.Sequential(nn.LayerNorm(critic_in), nn.Linear(critic_in, 1))
 
-        def forward(self, x, mask=None):
+        def forward(self, x, mask=None, global_time=None):
             # x: [B, A, 10 + C*10], first 10 are spatial/route features.
             b, a, _ = x.shape
             if mask is not None:
@@ -167,8 +195,19 @@ if _TORCH:
             fused, _ = self.cross(q, ch, ch)
             z = fused[:, 0].reshape(b, a, self.hidden)
             logits = self.actor(z).squeeze(-1)
-            pooled = z.mean(1) if mask is None else (
-                z.masked_fill(~mask[..., None], 0.0).sum(1) / mask.sum(1)[:, None])
+            if mask is None:
+                pooled = z.mean(1)
+                maxed = z.max(1).values
+            else:
+                valid_z = z.masked_fill(~mask[..., None], -1e9)
+                pooled = valid_z.masked_fill(~mask[..., None], 0.0).sum(1) / mask.sum(1)[:, None]
+                maxed = valid_z.max(1).values
+            if self.critic_pooling == "mean_max":
+                pooled = torch.cat((pooled, maxed), dim=-1)
+            if self.global_time_dim:
+                if global_time is None or global_time.shape != (b, self.global_time_dim):
+                    raise ValueError("global_time must match configured global_time_dim")
+                pooled = torch.cat((pooled, global_time.to(pooled.dtype)), dim=-1)
             if mask is not None:
                 logits = logits.masked_fill(~mask, -1e9)
             return logits, self.critic(pooled).squeeze(-1)
@@ -185,6 +224,15 @@ class PPOConfig:
     value_coef: float = .5
     max_grad_norm: float = .5
     minibatch_size: int = 128
+    entropy_end: float = .001
+
+
+def entropy_coefficient(cfg: PPOConfig, update: int, total_updates: int) -> float:
+    """Z01 linear entropy schedule, clamped to the configured interval."""
+    if total_updates < 1 or update < 0:
+        raise ValueError('update and total_updates must be valid')
+    frac = min(1.0, float(update) / max(1, total_updates - 1))
+    return float(cfg.entropy_coef) + frac * (float(cfg.entropy_end) - float(cfg.entropy_coef))
 
 
 def compute_gae(rewards: Sequence[float], values: Sequence[float], cfg=PPOConfig()):

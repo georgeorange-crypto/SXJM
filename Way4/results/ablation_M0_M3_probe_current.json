@@ -1,0 +1,68 @@
+{
+  "problem": 4,
+  "seeds": [
+    2000
+  ],
+  "results": {
+    "M0": [
+      {
+        "seed": 2000,
+        "success": false,
+        "full_clear": false,
+        "resolved": 0,
+        "n_channels": 20,
+        "present": 1,
+        "virtual_time_s": 29.0,
+        "error": null,
+        "steps": 1
+      }
+    ],
+    "M1": [
+      {
+        "seed": 2000,
+        "success": false,
+        "full_clear": false,
+        "resolved": 0,
+        "n_channels": 20,
+        "present": 7,
+        "virtual_time_s": 119.0,
+        "error": null,
+        "steps": 1
+      }
+    ],
+    "M2": [
+      {
+        "seed": 2000,
+        "success": false,
+        "full_clear": false,
+        "resolved": 0,
+        "n_channels": 20,
+        "present": 7,
+        "virtual_time_s": 119.0,
+        "error": null,
+        "steps": 1
+      }
+    ],
+    "M3": [
+      {
+        "seed": 2000,
+        "success": false,
+        "full_clear": false,
+        "resolved": 0,
+        "n_channels": 20,
+        "present": 6,
+        "virtual_time_s": 299.0,
+        "error": null,
+        "steps": 1
+      }
+    ]
+  },
+  "selected_cells": [
+    "M0",
+    "M1",
+    "M2",
+    "M3"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": true
+}

@@ -25,3 +25,12 @@ def test_clock_regression_rejected():
     with pytest.raises(ValueError):
         timed_policy_transitions(records(100., 50.), 200.,
                                  full_clear=True, n_unresolved=0)
+
+
+def test_rollout_uses_optional_state_potential_shaping():
+    rows = records(0., 100.)
+    rows[0]['phi_before'] = 1.0
+    rows[0]['phi_after'] = 3.0
+    ts = timed_policy_transitions(rows, 100., full_clear=True,
+                                  n_unresolved=0, gamma=1.0)
+    assert ts[0].reward == pytest.approx(-0.1 + 0.1)

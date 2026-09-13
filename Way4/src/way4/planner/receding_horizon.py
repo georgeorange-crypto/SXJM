@@ -286,12 +286,52 @@ class RecedingHorizonPlanner:
         self.pareto_candidates = bool(pareto_candidates)
         self.route_synergy_weight = float(route_synergy_weight)
         self.age_weight = float(age_weight)
+        self._cost_cache = {}
+
+    def beam_search(self, candidates: Sequence[MacroCandidate], base_view,
+                    horizon: Optional[int] = None, beam_width: Optional[int] = None,
+                    successor=None):
+        """Beam search with optional dynamic successor expansion (M05).
+
+        ``successor(sequence, base_view)`` may return the next candidate pool for
+        a partial sequence.  Without it, the historical static-pool behavior is
+        retained for compatibility.
+        """
+        h = max(1, int(self.horizon if horizon is None else horizon))
+        b = max(1, int(self.beam_width if beam_width is None else beam_width))
+        pool = list(candidates)
+        if not pool:
+            return None, 0.0, []
+        beam = [(0.0, (c,)) for c in pool]
+        for depth in range(1, h):
+            expanded = []
+            for cost, seq in beam:
+                next_pool = pool if successor is None else list(successor(seq, base_view))
+                expanded.extend((cost + float(c.expected_time), seq + (c,))
+                                for c in next_pool)
+            expanded.sort(key=lambda x: (x[0] + self._cost_to_go(base_view, h - depth),
+                                         tuple(float(c.expected_time) for c in x[1])))
+            beam = expanded[:b]
+        scored = [(cost + self._cost_to_go(base_view, 0), seq) for cost, seq in beam]
+        best_cost, best_seq = min(scored, key=lambda x: (x[0], tuple(float(c.expected_time) for c in x[1])))
+        return best_seq[0], float(best_cost), list(best_seq)
 
     # -- public -------------------------------------------------------------
 
     def plan(self, belief, certificate, state, candidates: Sequence[MacroCandidate]) -> PlanResult:
+        # A single plan call evaluates many candidates that collapse to the same
+        # predicted CostView. Cache only within this call: views are hypothetical
+        # and must never leak across real belief updates.
+        self._cost_cache = {}
         candidates = self._pareto_candidates(candidates) if self.pareto_candidates else list(candidates)
         base = build_cost_view(belief, certificate, state)
+        if self.horizon >= 3:
+            first, beam_q, _sequence = self.beam_search(candidates, base)
+            if first is not None:
+                return PlanResult(first, beam_q,
+                                  [CandidateEvaluation(first, float(first.expected_time),
+                                                        beam_q - float(first.expected_time), beam_q, [])],
+                                  self.horizon, self.outcome_mode)
         evals: List[CandidateEvaluation] = []
         for a in candidates:
             outs = self.predictor.predict(a, belief, base)
@@ -395,17 +435,24 @@ class RecedingHorizonPlanner:
     # -- cost-to-go (horizon recursion) ------------------------------------
 
     def _cost_to_go(self, view: CostView, depth: int) -> float:
+        key = (repr(view), int(depth))
+        cached = self._cost_cache.get(key)
+        if cached is not None:
+            return cached
         base = self.fce.estimate(view).total
         if depth <= 0:
+            self._cost_cache[key] = base
             return base
         # V2: refine the terminal estimate by one greedy proxy step (beam-limited).
         proxies = self._proxy_steps(view)
         if not proxies:
+            self._cost_cache[key] = base
             return base
         proxies.sort(key=lambda cv: cv[0])            # cheapest immediate first
         best2 = min(
             c2 + self._cost_to_go(v2, depth - 1) for c2, v2 in proxies[: self.beam_width]
         )
+        self._cost_cache[key] = best2
         return best2
 
     def _proxy_steps(self, view: CostView) -> List[Tuple[float, CostView]]:

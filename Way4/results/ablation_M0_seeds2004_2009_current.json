@@ -1,0 +1,85 @@
+{
+  "problem": 4,
+  "seeds": [
+    2004,
+    2005,
+    2006,
+    2007,
+    2008,
+    2009
+  ],
+  "results": {
+    "M0": [
+      {
+        "seed": 2004,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 14038.199124,
+        "error": null,
+        "steps": 150,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2005,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 15648.776965,
+        "error": null,
+        "steps": 146,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2006,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 17632.26007,
+        "error": null,
+        "steps": 196,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2007,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 11,
+        "virtual_time_s": 14801.631059,
+        "error": null,
+        "steps": 133,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2008,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 11,
+        "virtual_time_s": 15473.534949,
+        "error": null,
+        "steps": 140,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      }
+    ]
+  },
+  "selected_cells": [
+    "M0"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": false
+}

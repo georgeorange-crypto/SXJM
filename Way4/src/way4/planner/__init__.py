@@ -25,6 +25,17 @@ from .spatial import InformationRidge, SpatialStopGenerator
 from .opportunities import RemainingTask, insertion_cost, pareto_prune
 from .task_pool import RemainingTaskPool, WaitingTask
 from .baselines import CoverageGreedyResult, coverage_greedy
+from .commitment import FocusController, FocusState
+from .lower_bounds import time_debt
+from .backbone import (BackboneEdge, BackboneManager, BackboneNode, BackboneStatus,
+                       BoundaryCap, CoverageDebt, CoverageResponsibility, DirectionalTriangle,
+                       BackboneGeometryAudit, audit_backbone_geometry, build_boundary_caps,
+                       build_p4_triangle_mesh)
+from .p3_backbone import P3BackboneResult, center_ring_baseline, optimize_p3_backbone
+from .piggyback import (WAIT_FOR_BACKBONE, RefineVariantEvaluation,
+                        choose_refine_variant, evaluate_refine_variant,
+                        mark_wait_for_backbone)
+from .endgame import EndgameController, EndgamePlan, solve_endgame
 
 __all__ = [
     "CandidateGenerator",
@@ -47,4 +58,16 @@ __all__ = [
     "InformationRidge",
     "CoverageGreedyResult",
     "coverage_greedy",
+    "FocusController",
+    "FocusState",
+    "time_debt",
+    "BackboneEdge", "BackboneManager", "BackboneNode", "BackboneStatus",
+    "BoundaryCap", "CoverageDebt", "CoverageResponsibility", "DirectionalTriangle",
+    "P3BackboneResult", "center_ring_baseline", "optimize_p3_backbone",
+    "build_p4_triangle_mesh",
+    "build_boundary_caps",
+    "BackboneGeometryAudit", "audit_backbone_geometry",
+    "RefineVariantEvaluation", "evaluate_refine_variant", "choose_refine_variant",
+    "WAIT_FOR_BACKBONE", "mark_wait_for_backbone",
+    "EndgamePlan", "solve_endgame", "EndgameController",
 ]

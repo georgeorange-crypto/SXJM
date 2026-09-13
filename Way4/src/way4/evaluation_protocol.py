@@ -54,6 +54,29 @@ DETERMINISTIC_ABLATIONS = (
     AblationSpec("routing_nearest", routing="nearest"),
 )
 
+RECOMMENDED_ABLATIONS = tuple(AblationSpec(name, adaptive_batch=adaptive, routing=routing,
+    coverage=coverage) for name, adaptive, routing, coverage in (
+        ("M0", False, "current", "active_fallback"), ("M1", True, "current", "active_fallback"),
+        ("M2", True, "tspn", "active_fallback"), ("M3", True, "tspn", "backbone_only"),
+        ("P0", False, "current", "active_fallback"), ("P1", False, "current", "active_fallback"),
+        ("P2", True, "current", "active_fallback"), ("P3", True, "tspn", "active_fallback"),
+        ("P4", True, "tspn", "backbone_only")))
+
+
+def compare_ablation_steps(results, pairs=(("M0", "M1"), ("M1", "M2"), ("M2", "M3"), ("M3", "P4"))):
+    """Return paired deltas only when both cells have complete real rows."""
+    out = []
+    for left, right in pairs:
+        a, b = results.get(left, {}), results.get(right, {})
+        if a.get("status") != "complete" or b.get("status") != "complete":
+            out.append({"from": left, "to": right, "status": "insufficient_data"})
+        else:
+            out.append({"from": left, "to": right, "status": "complete",
+                        "delta_full_clear_rate": b.get("full_clear_rate", 0) - a.get("full_clear_rate", 0),
+                        "delta_time_mean": (None if a.get("time_mean") is None or b.get("time_mean") is None
+                                             else b["time_mean"] - a["time_mean"])})
+    return out
+
 
 def assert_ablation_matrix_valid(specs=DETERMINISTIC_ABLATIONS):
     names = [s.name for s in specs]

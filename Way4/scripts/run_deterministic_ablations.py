@@ -15,7 +15,7 @@ sys.path[:0] = [str(ROOT), str(HERE.parents[1] / "src")]
 
 from offline_sim.case import generate_case
 from offline_sim.engine import Engine
-from way4.evaluation_protocol import DETERMINISTIC_ABLATIONS
+from way4.evaluation_protocol import DETERMINISTIC_ABLATIONS, RECOMMENDED_ABLATIONS
 from way4.executor import Way3EngineAdapter
 from way4.pipeline import Way4Pipeline
 
@@ -31,6 +31,16 @@ def run_cell(name, seed, max_steps):
         "minus_no_signal": dict(planner_mode="route_math", enable_no_signal=False),
         "minus_cardinality": dict(planner_mode="route_math", enable_cardinality=False),
     }
+    # The checklist matrix deliberately keeps PPO cells explicit: this runner
+    # is deterministic-only and must not silently substitute math results for P0-P4.
+    if name.startswith(("M0", "M1", "M2", "M3")):
+        supported.update({
+            "M0": dict(planner_mode="route_math", adaptive_scan=False),
+            "M1": dict(planner_mode="route_math", adaptive_scan=True),
+            "M2": dict(planner_mode="route_math", adaptive_scan=True, routing_strategy="tspn"),
+            "M3": dict(planner_mode="route_math", adaptive_scan=True,
+                        routing_strategy="tspn", coverage_strategy="backbone_only"),
+        })
     if name not in supported:
         return {"seed": seed, "success": None,
                 "error": "unsupported_configuration", "virtual_time_s": None}
@@ -54,6 +64,8 @@ def run_cell(name, seed, max_steps):
             "virtual_time_s": result.virtual_time_s,
             "error": result.error,
             "steps": result.steps,
+            "illegal_clear": int(result.illegal_clear),
+            "safety_violation": int(result.safety_violation),
         }
     except Exception as exc:  # preserve the failed cell for audit
         return {"seed": seed, "success": None,
@@ -66,6 +78,7 @@ def main():
     parser.add_argument("--max-steps", type=int, default=3000)
     parser.add_argument("--cells", default=None,
                         help="comma-separated cell names; default runs the full frozen matrix")
+    parser.add_argument("--matrix", choices=("deterministic", "recommended"), default="deterministic")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
     if "-" in args.seeds:
@@ -73,12 +86,13 @@ def main():
         seeds = list(range(lo, hi + 1))
     else:
         seeds = [int(x) for x in args.seeds.split(",")]
-    selected = set(args.cells.split(",")) if args.cells else {s.name for s in DETERMINISTIC_ABLATIONS}
-    unknown = selected - {s.name for s in DETERMINISTIC_ABLATIONS}
+    specs = RECOMMENDED_ABLATIONS if args.matrix == "recommended" else DETERMINISTIC_ABLATIONS
+    selected = set(args.cells.split(",")) if args.cells else {s.name for s in specs}
+    unknown = selected - {s.name for s in specs}
     if unknown:
         parser.error(f"unknown cells: {sorted(unknown)}")
     results = {}
-    for spec in DETERMINISTIC_ABLATIONS:
+    for spec in specs:
         if spec.name not in selected:
             continue
         results[spec.name] = []

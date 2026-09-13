@@ -11,9 +11,16 @@ class WatchdogConfig:
 class ProgressWatchdog:
     def __init__(self, cfg=None):
         self.cfg = cfg or WatchdogConfig(); self.stale = 0; self._last = None
+        self._actions = []
         self.fallback = False
-    def observe(self, progress_key, candidate_cost=None, conservative_cost=None):
+    def observe(self, progress_key, candidate_cost=None, conservative_cost=None,
+                action_signature=None):
         if self.fallback: return True
+        if action_signature is not None:
+            self._actions.append(tuple(action_signature))
+            self._actions = self._actions[-4:]
+            if len(self._actions) == 4 and self._actions[0] == self._actions[2] and self._actions[1] == self._actions[3] and self._actions[0] != self._actions[1]:
+                self.fallback = True
         if self._last == progress_key: self.stale += 1
         else: self.stale = 0
         self._last = progress_key
@@ -24,6 +31,7 @@ class ProgressWatchdog:
         return self.fallback
     def reset(self):
         self.stale = 0; self._last = None; self.fallback = False
+        self._actions = []
 
 class CandidatePPOPlanner:
     """Safe deployment adapter. PPO may reorder only the supplied safe candidates.
@@ -38,8 +46,10 @@ class CandidatePPOPlanner:
         self.last_error = None
         self.fallback_reason = None
     def reset_episode(self): self.watchdog.reset()
-    def record_progress(self, key, candidate_cost=None, conservative_cost=None):
-        fallback = self.watchdog.observe(key, candidate_cost, conservative_cost)
+    def record_progress(self, key, candidate_cost=None, conservative_cost=None,
+                        action_signature=None):
+        fallback = self.watchdog.observe(key, candidate_cost, conservative_cost,
+                                         action_signature)
         if fallback and self.fallback_reason is None:
             self.fallback_reason = "watchdog_stall_or_detour"
         return fallback
@@ -52,7 +62,8 @@ class CandidatePPOPlanner:
             return result
         try:
             idx = int(self.policy(result.evaluations, belief, state))
-            if idx < 0 or idx >= len(result.evaluations): return result
+            from .architecture_contract import validate_policy_output
+            idx = validate_policy_output(idx, len(result.evaluations))
             self.decisions.append({"n_candidates": len(result.evaluations),
                                    "chosen": idx,
                                    "q_values": [float(e.q_value) for e in result.evaluations]})
@@ -92,9 +103,11 @@ class TorchCandidatePolicy:
         probs = torch.softmax(logits[0] / max(self.temperature, 1e-6), -1)
         logp = torch.log(probs.clamp_min(1e-12))
         action = int(torch.multinomial(probs, 1).item()) if self.stochastic else int(torch.argmax(logits[0]).item())
+        selected_meta = getattr(evaluations[action].candidate, "meta", {})
         self.records.append({'observation': x[0].tolist(), 'action': action,
                              'virtual_time_before': float(state.virtual_time_s),
                              'log_prob': float(logp[action]), 'value': float(value[0])})
+        self.records[-1]['detour_time_s'] = float(selected_meta.get('detour_time_s', 0.0))
         return action
     def reset(self): self.records = []
 

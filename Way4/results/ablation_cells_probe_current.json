@@ -1,0 +1,82 @@
+{
+  "problem": 4,
+  "seeds": [
+    2000
+  ],
+  "results": {
+    "minus_no_signal": [
+      {
+        "seed": 2000,
+        "success": false,
+        "full_clear": false,
+        "resolved": 0,
+        "n_channels": 20,
+        "present": 7,
+        "virtual_time_s": 119.0,
+        "error": null,
+        "steps": 1
+      }
+    ],
+    "minus_cardinality": [
+      {
+        "seed": 2000,
+        "success": false,
+        "full_clear": false,
+        "resolved": 0,
+        "n_channels": 20,
+        "present": 7,
+        "virtual_time_s": 119.0,
+        "error": null,
+        "steps": 1
+      }
+    ],
+    "nbv_greedy": [
+      {
+        "seed": 2000,
+        "success": false,
+        "full_clear": false,
+        "resolved": 0,
+        "n_channels": 20,
+        "present": 7,
+        "virtual_time_s": 119.0,
+        "error": null,
+        "steps": 1
+      }
+    ],
+    "coverage_backbone_only": [
+      {
+        "seed": 2000,
+        "success": false,
+        "full_clear": false,
+        "resolved": 0,
+        "n_channels": 20,
+        "present": 6,
+        "virtual_time_s": 299.0,
+        "error": null,
+        "steps": 1
+      }
+    ],
+    "routing_nearest": [
+      {
+        "seed": 2000,
+        "success": false,
+        "full_clear": false,
+        "resolved": 0,
+        "n_channels": 20,
+        "present": 7,
+        "virtual_time_s": 119.0,
+        "error": null,
+        "steps": 1
+      }
+    ]
+  },
+  "selected_cells": [
+    "coverage_backbone_only",
+    "minus_cardinality",
+    "minus_no_signal",
+    "nbv_greedy",
+    "routing_nearest"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": true
+}

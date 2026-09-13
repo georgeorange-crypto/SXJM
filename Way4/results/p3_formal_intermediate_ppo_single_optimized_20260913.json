@@ -1,0 +1,182 @@
+{
+  "checkpoint": "Way4/runs/candidate_ppo_way4pro_formal_20260913.pt",
+  "problem": 3,
+  "planner_mode": "final_ppo",
+  "rows": [
+    {
+      "seed": 1000,
+      "full_clear": false,
+      "cleared": 3,
+      "total": 16,
+      "time_s": 0.0,
+      "avg_time_per_source_s": 0.0,
+      "steps": 26,
+      "move_m": 7258.018461318829,
+      "measure": 145,
+      "switch": 144,
+      "clear": 3,
+      "clear_hit": 3,
+      "illegal_clear": 0,
+      "safety_violation": 0,
+      "time_move_s": 1451.6036922637654,
+      "time_measure_s": 720.000000438606,
+      "time_switch_s": 144.0,
+      "time_clear_s": 14.999999297628364,
+      "services_per_stop": 14.8,
+      "revisit_distance": 0.0,
+      "shared_stop_ratio": 0.7,
+      "total_distance_m": 7258.018461318829,
+      "clear_distance_m": 2333.473983511858,
+      "longjump": 2,
+      "crossing": 2,
+      "source_diagnostics": {
+        "1": {
+          "first_detect_s": null,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "UNKNOWN"
+        },
+        "2": {
+          "first_detect_s": null,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "UNKNOWN"
+        },
+        "3": {
+          "first_detect_s": 778.507405,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "DETECTED"
+        },
+        "4": {
+          "first_detect_s": 23.0,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "DETECTED"
+        },
+        "5": {
+          "first_detect_s": null,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "UNKNOWN"
+        },
+        "6": {
+          "first_detect_s": 35.0,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "INITIALIZED"
+        },
+        "7": {
+          "first_detect_s": 41.0,
+          "localized_s": 963.826448,
+          "cleared_s": 1132.879064,
+          "detect_to_clear_s": 1091.879064,
+          "status": "CLEARED"
+        },
+        "8": {
+          "first_detect_s": 354.802502,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "INITIALIZED"
+        },
+        "9": {
+          "first_detect_s": 2035.603692,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "DETECTED"
+        },
+        "10": {
+          "first_detect_s": 1824.114787,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "INITIALIZED"
+        },
+        "11": {
+          "first_detect_s": null,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "UNKNOWN"
+        },
+        "12": {
+          "first_detect_s": 808.507405,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "INITIALIZED"
+        },
+        "13": {
+          "first_detect_s": 77.0,
+          "localized_s": 1472.246087,
+          "cleared_s": 1660.581895,
+          "detect_to_clear_s": 1583.581895,
+          "status": "CLEARED"
+        },
+        "14": {
+          "first_detect_s": 814.507405,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "DETECTED"
+        },
+        "15": {
+          "first_detect_s": null,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "UNKNOWN"
+        },
+        "16": {
+          "first_detect_s": 95.0,
+          "localized_s": 318.802502,
+          "cleared_s": 1401.185436,
+          "detect_to_clear_s": 1306.185436,
+          "status": "CLEARED"
+        },
+        "17": {
+          "first_detect_s": null,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "UNKNOWN"
+        },
+        "18": {
+          "first_detect_s": 107.0,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "INITIALIZED"
+        },
+        "19": {
+          "first_detect_s": 832.507405,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "INITIALIZED"
+        },
+        "20": {
+          "first_detect_s": null,
+          "localized_s": null,
+          "cleared_s": null,
+          "detect_to_clear_s": null,
+          "status": "UNKNOWN"
+        }
+      },
+      "policy_decisions": 5,
+      "ppo_fallback": true,
+      "ppo_fallback_reason": "watchdog_stall_or_detour",
+      "greedy": true,
+      "error": null
+    }
+  ],
+  "full_clear_rate": 0.0
+}

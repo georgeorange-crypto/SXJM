@@ -32,6 +32,7 @@ from sxjm_core.geometry import dist
 
 from ..belief import ChannelStatus
 from ..core import MacroActionType
+from ..planner.lower_bounds import time_debt
 
 # --- fixed scaling constants (documented, not learned) -----------------------
 
@@ -71,6 +72,152 @@ FEATURE_DIM = CANDIDATE_FEATURE_DIM + GLOBAL_FEATURE_DIM
 FEATURE_SCHEMA_VERSION = 2
 FEATURE_SCHEMA_SPEC = "action=" + ",".join(a.value for a in _ACTION_ORDER) + ";candidate_dim=" + str(CANDIDATE_FEATURE_DIM)
 FEATURE_SCHEMA_HASH = hashlib.sha256(FEATURE_SCHEMA_SPEC.encode("utf-8")).hexdigest()
+
+BACKBONE_DECISIONS = ("FOLLOW", "SKIP", "INSERT", "DETOUR", "RETURN")
+
+
+def backbone_feature_block(candidate) -> List[float]:
+    """Explicit backbone context for a residual policy (V01/V02)."""
+    meta = getattr(candidate, "meta", {})
+    kind = str(meta.get("backbone_kind", ""))
+    decision = {"BackboneNext": "FOLLOW", "BackboneSkip": "SKIP",
+                "BackboneBridge": "RETURN", "BackboneClosure": "FOLLOW",
+                "PiggybackRefine": "INSERT", "PiggybackClear": "INSERT"}.get(kind, "DETOUR")
+    one_hot = [1.0 if decision == name else 0.0 for name in BACKBONE_DECISIONS]
+    values = [float(meta.get("backbone_index", -1.0)),
+              float(meta.get("backbone_route_delta", meta.get("bridge_distance", 0.0))),
+              float(meta.get("backbone_debt_gain", meta.get("certificate_debt", 0.0))),
+              float(meta.get("backbone_nodes_retired", 0.0)),
+              float(meta.get("rejoin_cost", meta.get("bridge_distance", 0.0))),
+              float(meta.get("skip_gain", 0.0)), float(meta.get("piggyback_gain", 0.0))]
+    if values[0] < -1.0 or any(value < 0.0 for value in values[1:]):
+        raise ValueError("backbone features must be non-negative, except missing index=-1")
+    return [1.0 if kind else 0.0] + one_hot + [values[0] / 32.0, values[1] / T_SCALE,
+                                               values[2], values[3] / 32.0,
+                                               values[4] / T_SCALE, values[5], values[6]]
+
+
+def critic_time_state_block(*, elapsed_time_s: float, unresolved_count: int,
+                            cleared_count: int, certificate_coverage: float,
+                            remaining_route_lb_s: float, time_debt_s: float,
+                            phase: float) -> List[float]:
+    """AA02: normalized global temporal state for the value critic."""
+    if any(float(v) < 0.0 for v in (elapsed_time_s, unresolved_count, cleared_count,
+                                    remaining_route_lb_s, time_debt_s)):
+        raise ValueError("critic time state values must be non-negative")
+    if not 0.0 <= float(certificate_coverage) <= 1.0:
+        raise ValueError("certificate coverage must be in [0, 1]")
+    return [float(elapsed_time_s) / T_SCALE, float(unresolved_count),
+            float(cleared_count), float(certificate_coverage),
+            float(remaining_route_lb_s) / T_SCALE, float(time_debt_s) / T_SCALE,
+            float(phase)]
+
+
+def time_debt_block(*, before_est_s: float, after_est_s: float,
+                    remaining_lb_s: float) -> List[float]:
+    """Optional v3 block: debt before, after estimate, and signed delta."""
+    before = time_debt(before_est_s, remaining_lb_s)
+    after = time_debt(after_est_s, remaining_lb_s)
+    return [before / T_SCALE, after / T_SCALE, (after - before) / T_SCALE]
+
+
+def candidate_time_debt_block(candidate) -> List[float]:
+    """N02: candidate-local before/after time debt and signed change."""
+    meta = getattr(candidate, "meta", {})
+    before = float(meta.get("time_debt_before_s", 0.0))
+    after = float(meta.get("time_debt_after_s", 0.0))
+    if before < 0.0 or after < 0.0:
+        raise ValueError("candidate time debt must be non-negative")
+    return [before / T_SCALE, after / T_SCALE, (after - before) / T_SCALE]
+
+
+def candidate_time_block(candidate, *, total_time_s: Optional[float] = None) -> List[float]:
+    """Optional v3 immediate-time block in seconds/T_SCALE.
+
+    Candidate generators may provide ``predicted_*_time_s`` metadata. Missing
+    components remain zero; the total falls back to ``expected_time`` so no
+    component is invented from an aggregate.
+    """
+    meta = getattr(candidate, "meta", {})
+    total = float(candidate.expected_time if total_time_s is None else total_time_s)
+    move = float(meta.get("predicted_move_time_s", 0.0))
+    measure = float(meta.get("predicted_measure_time_s", 0.0))
+    switch = float(meta.get("predicted_switch_time_s", 0.0))
+    service = float(meta.get("predicted_service_time_s", 0.0))
+    vals = (move, measure, switch, service, total)
+    if any(v < 0.0 for v in vals):
+        raise ValueError("predicted times must be non-negative")
+    return [v / T_SCALE for v in vals]
+
+
+def route_efficiency_block(candidate) -> List[float]:
+    """Optional v3 route-efficiency features, with explicit unit scaling."""
+    meta = getattr(candidate, "meta", {})
+    def val(name, default=0.0):
+        return float(getattr(candidate, name, meta.get(name, default)))
+    route_delta = val("route_delta", val("route_marginal"))
+    route_rank = val("route_rank")
+    detour = val("detour_ratio")
+    backtrack = val("backtrack_m")
+    repeated = val("repeated_edge_m")
+    repeated_ratio = val("repeated_edge_ratio")
+    returned = val("unnecessary_return_m")
+    crossing_gain = val("avoidable_crossing_gain", val("avoidable_crossing_m"))
+    corridor = val("corridor_distance")
+    next_task = val("next_task_distance")
+    vals = (route_delta, route_rank, detour, backtrack, repeated,
+            repeated_ratio, returned, crossing_gain, corridor, next_task)
+    if any(v < 0.0 for v in vals):
+        raise ValueError("route efficiency features must be non-negative")
+    return [route_delta / T_SCALE, route_rank, detour, backtrack / ARENA_R,
+            repeated / ARENA_R, repeated_ratio, returned / ARENA_R,
+            crossing_gain / ARENA_R, corridor / ARENA_R, next_task / ARENA_R]
+
+
+def progress_per_second_block(candidate, *, time_s: Optional[float] = None) -> List[float]:
+    """Optional v3 progress-rate features, all gain units per second."""
+    meta = getattr(candidate, "meta", {})
+    total = float(candidate.expected_time if time_s is None else time_s)
+    names = ("coverage_gain", "certificate_gain", "information_gain",
+             "clear_probability", "localization_gain")
+    gains = [float(getattr(candidate, name, meta.get(name, 0.0))) for name in names]
+    if total <= 0.0 or any(g < 0.0 for g in gains):
+        raise ValueError("progress gains must be non-negative and time must be positive")
+    return [g / total for g in gains]
+
+
+def future_route_block(candidate) -> List[float]:
+    """Optional v3 future-route features with explicit second/metre scaling."""
+    meta = getattr(candidate, "meta", {})
+    def val(name, default=0.0):
+        return float(getattr(candidate, name, meta.get(name, default)))
+    before = val("remaining_route_lb_before")
+    after = val("remaining_route_lb_after")
+    future_delta = val("future_cost_delta")
+    debt_delta = val("delta_time_debt")
+    nearest = val("nearest_next_task")
+    cluster = val("task_cluster_size")
+    if cluster < 0.0 or nearest < 0.0 or before < 0.0 or after < 0.0:
+        raise ValueError("future route distances and cluster size must be non-negative")
+    return [before / T_SCALE, after / T_SCALE, future_delta / T_SCALE,
+            debt_delta / T_SCALE, nearest / ARENA_R, cluster]
+
+
+def history_behavior_block(candidate) -> List[float]:
+    """Optional v3 historical-behaviour features."""
+    meta = getattr(candidate, "meta", {})
+    def val(name):
+        return float(getattr(candidate, name, meta.get(name, 0.0)))
+    region = val("times_region_visited")
+    nearby = val("times_channel_measured_nearby")
+    since_time = val("time_since_last_progress")
+    since_dist = val("distance_since_last_progress")
+    overlap = val("recent_route_overlap_ratio")
+    if any(v < 0.0 for v in (region, nearby, since_time, since_dist)):
+        raise ValueError("history counts and distances must be non-negative")
+    if not 0.0 <= overlap <= 1.0:
+        raise ValueError("recent route overlap ratio must be in [0, 1]")
+    return [region, nearby, since_time / T_SCALE, since_dist / ARENA_R, overlap]
 
 
 def _action_one_hot(action_type: MacroActionType) -> List[float]:
@@ -157,6 +304,17 @@ def evaluation_features(evaluation, belief, state, *, n_candidates: int) -> List
     glob = global_block(belief, state)
     glob.append(float(n_candidates) / NOMINAL_CANDS)
     return cand + glob + channel_context_block(evaluation, belief, state)
+
+
+def evaluation_features_v3(evaluation, belief, state, *, n_candidates: int) -> List[float]:
+    """Explicit augmented vector for v3 experiments (N02/O04).
+
+    The frozen ``evaluation_features`` schema is unchanged for old checkpoints;
+    v3 callers opt in and receive time-debt plus future-route blocks.
+    """
+    base = evaluation_features(evaluation, belief, state, n_candidates=n_candidates)
+    candidate = evaluation.candidate
+    return base + candidate_time_debt_block(candidate) + future_route_block(candidate)
 
 
 def channel_context_block(evaluation, belief, state, certificate=None) -> List[float]:

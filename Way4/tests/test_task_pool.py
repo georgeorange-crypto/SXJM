@@ -1,5 +1,6 @@
 from way4.belief import BeliefState, ChannelStatus
 from way4.planner import RemainingTaskPool
+from way4.planner.opportunities import RemainingTask
 
 
 def test_waiting_is_planner_state_not_belief_state():
@@ -42,3 +43,18 @@ def test_route_assignment_respects_feasibility_gate():
     assert pool.assign_route_opportunities(
         [(0, 0), (10, 0)], {1: 100}, viable=lambda _c, _p: False
     ) == {}
+
+
+def test_pending_pool_exposes_all_task_families():
+    belief = BeliefState(n_channels=2)
+    belief[1].status = ChannelStatus.UNKNOWN
+    belief[2].status = ChannelStatus.DETECTED
+    pool = RemainingTaskPool()
+    pool.sync(belief)
+    assert set(pool.pending_tasks) == {
+        "EXPLORE", "INITIALIZE", "REFINE", "REACQUIRE", "PURSUE", "CLEAR",
+        "VERIFY", "BACKBONE",
+    }
+    assert [t.channel for t in pool.pending_tasks["REFINE"]] == [2]
+    pool.register(RemainingTask("CLEAR", channel=7))
+    assert pool.pending_tasks["CLEAR"][-1].channel == 7

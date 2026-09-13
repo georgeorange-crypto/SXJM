@@ -1,0 +1,28 @@
+{
+  "problem": 4,
+  "seeds": [
+    2001
+  ],
+  "results": {
+    "M1": [
+      {
+        "seed": 2001,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 14023.570592,
+        "error": null,
+        "steps": 87,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      }
+    ]
+  },
+  "selected_cells": [
+    "M1"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": true
+}

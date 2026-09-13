@@ -104,6 +104,50 @@ def test_two_opt_never_worse_than_nn_seed():
         assert opt_len <= seed_len + 1e-9
 
 
+def test_new_task_uses_cheapest_insertion_without_route_rebuild():
+    from way4.routing.unified import ServiceOpportunity, UnifiedRoutePlanner
+    p = UnifiedRoutePlanner()
+    route, index, delta = p.insert_at_cheapest(
+        [(0.0, 0.0), (100.0, 0.0)], ServiceOpportunity((50.0, 0.0))
+    )
+    assert route == [(0.0, 0.0), (50.0, 0.0), (100.0, 0.0)]
+    assert index == 1 and delta == 0.0
+
+
+def test_clear_ready_task_is_inserted_only_when_increment_is_cheap():
+    from way4.routing.unified import ServiceOpportunity, UnifiedRoutePlanner
+    p = UnifiedRoutePlanner()
+    route, index, delta, inserted = p.insert_clear_if_cheap(
+        [(0.0, 0.0), (100.0, 0.0)], ServiceOpportunity((50.0, 0.0)), max_delta_m=1
+    )
+    assert inserted and index == 1 and delta == 0.0
+    unchanged, index, delta, inserted = p.insert_clear_if_cheap(
+        [(0.0, 0.0), (100.0, 0.0)], ServiceOpportunity((300.0, 0.0)), max_delta_m=10
+    )
+    assert not inserted and index is None and unchanged == [(0.0, 0.0), (100.0, 0.0)]
+
+
+def test_route_cleanup_accepts_only_strictly_better_route():
+    from way4.routing.unified import UnifiedRoutePlanner
+    p = UnifiedRoutePlanner()
+    route, cost, changed = p.cleanup_route(
+        [(100., 0.), (0., 100.), (100., 100.)], start=(0., 0.)
+    )
+    assert changed and cost < 400.0
+    same, same_cost, changed = p.cleanup_route([(10., 0.)], start=(0., 0.))
+    assert not changed and same == [(10., 0.)] and same_cost == 10.0
+
+
+def test_route_cleanup_scheduler_uses_decision_distance_or_belief_trigger():
+    from way4.routing.unified import RouteCleanupScheduler
+    s = RouteCleanupScheduler()
+    assert not s.due(decision_count=4, distance_m=700)
+    assert s.due(decision_count=5, distance_m=0)
+    s.mark_cleaned(decision_count=5, distance_m=0)
+    assert s.due(decision_count=5, distance_m=750)
+    assert s.due(decision_count=5, distance_m=0, major_belief_change=True)
+
+
 def test_tspn_approach_metric_uses_radius():
     """A big neighbourhood radius shortens the approach: d_N = max(0, d − r)."""
     est = RouteEstimator()

@@ -83,3 +83,11 @@ def certified_gap(elapsed_s: float, lower_bound_s: float) -> float:
     if lower_bound_s <= 0.0:
         return 0.0 if elapsed_s <= 0.0 else float("inf")
     return (float(elapsed_s) - float(lower_bound_s)) / float(lower_bound_s)
+
+
+def time_debt(estimated_remaining_s: float, remaining_lower_bound_s: float) -> float:
+    """N01: unavoidable future-time debt above the supplied lower bound."""
+    est, lb = float(estimated_remaining_s), float(remaining_lower_bound_s)
+    if est < 0.0 or lb < 0.0:
+        raise ValueError("remaining times must be non-negative")
+    return max(0.0, est - lb)

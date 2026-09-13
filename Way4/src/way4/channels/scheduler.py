@@ -85,10 +85,13 @@ class AdaptiveScanSession:
                 c, self.q, self.belief, self.certificate
             )
             if allowed and value > self.min_value:
-                ranked.append((float(value), c))
+                dwell = self.scheduler.measure_s + (
+                    self.scheduler.switch_s if int(c) != int(self.current_channel) else 0.0
+                )
+                ranked.append((float(value) / max(dwell, 1e-9), float(value), c))
         if not ranked:
             return ScanPlan([], stop_reason="no_positive_voi", stop_value=0.0)
-        value, channel = max(ranked, key=lambda x: (x[0], x[1] == self.current_channel))
+        _score, value, channel = max(ranked, key=lambda x: (x[0], x[1], x[2] == self.current_channel))
         switched = int(channel != self.current_channel)
         return ScanPlan(
             [channel], value=value,
@@ -112,7 +115,9 @@ class ChannelScheduler:
         w_certificate: float = 1.0,   # weight on UNKNOWN coverage/discover value
         w_refine: float = 1.0,        # weight on DETECTED bearing-shrink value
         w_scan_debt: float = 0.25,
-        early_cap: int = 20,
+        # Adaptive scan is allowed to stop and replan after each measurement;
+        # this is only a safety upper bound for one proposed batch (G06).
+        early_cap: int = 5,
         mid_cap: int = 6,
         starvation_limit: int = 8,
         eps: float = 1e-9,

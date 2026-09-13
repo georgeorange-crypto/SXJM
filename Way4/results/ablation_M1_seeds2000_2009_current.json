@@ -1,0 +1,155 @@
+{
+  "problem": 4,
+  "seeds": [
+    2000,
+    2001,
+    2002,
+    2003,
+    2004,
+    2005,
+    2006,
+    2007,
+    2008,
+    2009
+  ],
+  "results": {
+    "M1": [
+      {
+        "seed": 2000,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 13501.276052,
+        "error": null,
+        "steps": 109,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2001,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 14023.570592,
+        "error": null,
+        "steps": 87,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2002,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 15,
+        "virtual_time_s": 15830.375994,
+        "error": null,
+        "steps": 137,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2003,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 10,
+        "virtual_time_s": 14233.321654,
+        "error": null,
+        "steps": 105,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2004,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 15846.5194,
+        "error": null,
+        "steps": 129,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2005,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 15117.217012,
+        "error": null,
+        "steps": 141,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2006,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 15257.588814,
+        "error": null,
+        "steps": 134,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2007,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 11,
+        "virtual_time_s": 15434.030014,
+        "error": null,
+        "steps": 101,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2008,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 11,
+        "virtual_time_s": 15027.447166,
+        "error": null,
+        "steps": 121,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2009,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 12,
+        "virtual_time_s": 15490.400766,
+        "error": null,
+        "steps": 112,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      }
+    ]
+  },
+  "source_artifacts": [
+    "results/ablation_M1_seeds2000_2008_current.json",
+    "results/ablation_M1_seed2009_current.json"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": true
+}

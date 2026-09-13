@@ -46,6 +46,7 @@ class TransitionAudit:
     delta_hypothesis: float = 0.0
     no_progress: bool = False
     repeat_measure: bool = False
+    detour_time_s: float = 0.0
     time_since_last_progress_s: float = 0.0
     distance_since_last_progress_m: float = 0.0
     decisions_since_last_progress: int = 0
@@ -53,6 +54,11 @@ class TransitionAudit:
     @property
     def delta_virtual_time_s(self) -> float:
         return float(self.virtual_time_after) - float(self.virtual_time_before)
+
+    @property
+    def delta_virtual_time(self) -> float:
+        """Checklist B01 compatibility alias (seconds)."""
+        return self.delta_virtual_time_s
 
     @property
     def accounted_time_s(self) -> float:
@@ -65,9 +71,10 @@ class TransitionAudit:
         buckets = (self.delta_move_time_s, self.delta_measure_time_s,
                    self.delta_switch_time_s, self.delta_clear_time_s)
         if not all(isfinite(v) for v in
-                   (self.virtual_time_before, self.virtual_time_after, *buckets)):
+                   (self.virtual_time_before, self.virtual_time_after,
+                    *buckets, self.detour_time_s)):
             raise ValueError("decision times must be finite")
-        if any(v < 0 for v in buckets):
+        if any(v < 0 for v in (*buckets, self.detour_time_s)):
             raise ValueError("cost buckets must be nonnegative")
         if self.delta_virtual_time_s < -tol:
             raise ValueError("virtual time must be monotonic")
@@ -77,8 +84,38 @@ class TransitionAudit:
     def to_record(self) -> dict:
         out = asdict(self)
         out["delta_virtual_time_s"] = self.delta_virtual_time_s
+        out["delta_virtual_time"] = self.delta_virtual_time_s
         out["accounted_time_s"] = self.accounted_time_s
         return out
+
+
+def audit_from_record(record: dict) -> TransitionAudit:
+    """Parse and validate one pipeline decision audit record."""
+    audit = TransitionAudit(
+        virtual_time_before=float(record['virtual_time_before']),
+        virtual_time_after=float(record['virtual_time_after']),
+        delta_move_time_s=float(record.get('delta_move_time_s', 0.0)),
+        delta_measure_time_s=float(record.get('delta_measure_time_s', 0.0)),
+        delta_switch_time_s=float(record.get('delta_switch_time_s', 0.0)),
+        delta_clear_time_s=float(record.get('delta_clear_time_s', 0.0)),
+        delta_move_distance_m=float(record.get('delta_move_distance_m', 0.0)),
+        delta_clear=int(record.get('delta_clear', 0)),
+        delta_certificate=float(record.get('delta_certificate', 0.0)),
+        delta_localization=float(record.get('delta_localization',
+                                             record.get('delta_localization_area', 0.0))),
+        delta_mec=float(record.get('delta_mec',
+                                   record.get('delta_mec_radius', 0.0))),
+        delta_entropy=float(record.get('delta_entropy', 0.0)),
+        delta_hypothesis=float(record.get('delta_hypothesis', 0.0)),
+        no_progress=bool(record.get('no_progress', False)),
+        repeat_measure=bool(record.get('repeat_measure', False)),
+        detour_time_s=float(record.get('detour_time_s', 0.0)),
+        time_since_last_progress_s=float(record.get('time_since_last_progress_s', 0.0)),
+        distance_since_last_progress_m=float(record.get('distance_since_last_progress_m', 0.0)),
+        decisions_since_last_progress=int(record.get('decisions_since_last_progress', 0)),
+    )
+    audit.validate()
+    return audit
 
 def finish_episode(transitions: list[CandidateTransition], gamma=.99, lam=.95):
     adv, ret = compute_gae([t.reward for t in transitions],
@@ -106,9 +143,22 @@ def timed_policy_transitions(records, end_time_s, *, full_clear,
                  if i + 1 < len(records) else float(end_time_s))
         if not isfinite(before) or not isfinite(after) or after < before:
             raise ValueError('policy decision clocks must be finite and monotonic')
+        repeat = bool(record.get('repeat_measure', False))
+        no_progress = bool(record.get('no_progress', False))
+        phi_before = record.get('phi_before')
+        phi_after = record.get('phi_after')
+        detour_time_s = float(record.get('detour_time_s', 0.0))
+        audit = None
+        if all(key in record for key in ('delta_move_time_s', 'delta_measure_time_s',
+                                         'delta_switch_time_s', 'delta_clear_time_s')):
+            audit = audit_from_record(record)
         transitions.append(CandidateTransition(
             record['observation'], record['action'], record['log_prob'],
-            record['value'], dense_time_reward(after - before)))
+            record['value'], dense_time_reward(after - before,
+                no_progress=no_progress, repeat_measure=repeat,
+                detour_time_s=detour_time_s,
+                phi_before=phi_before, phi_after=phi_after,
+                gamma=gamma), audit=audit))
     if transitions:
         transitions[-1].done = True
         if not full_clear:

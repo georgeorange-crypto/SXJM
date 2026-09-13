@@ -50,7 +50,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Set, Tuple
-from math import isfinite
+from math import hypot, isfinite
 
 Point = Tuple[float, float]
 
@@ -94,6 +94,9 @@ class RouteMetrics:
     clear_distance: float = 0.0
     n_longjump: int = 0
     n_crossing: int = 0
+    self_intersection_count: int = 0
+    avoidable_crossing_count: int = 0
+    avoidable_crossing_m: float = 0.0
     backtrack_m: float = 0.0
     repeated_edge_m: float = 0.0
     unnecessary_return_m: float = 0.0
@@ -105,25 +108,123 @@ class EfficiencyMetrics:
     wasted_time_ratio: float = 0.0
     backtrack_ratio: float = 0.0
     repeated_edge_ratio: float = 0.0
+    coverage_overlap_ratio: float = 0.0
+    route_overlap_ratio: float = 0.0
     unnecessary_return_ratio: float = 0.0
     scan_efficiency_s_per_useful_observation: float = 0.0
     lower_bound_ratio: Optional[float] = None
     route_efficiency: Optional[float] = None
+    backbone_pruning_rate: float = 0.0
+    route_regret_waste_s: float = 0.0
+
+
+def backbone_pruning_rate(initial_count: int, visited_count: int) -> float:
+    """AE08: fraction of the initial backbone retired without a visit."""
+    initial, visited = int(initial_count), int(visited_count)
+    if initial < 0 or visited < 0 or visited > initial:
+        raise ValueError("backbone counts must satisfy 0 <= visited <= initial")
+    return (initial - visited) / initial if initial else 0.0
+
+
+def compute_batch_metrics(batch_sizes, stop_reasons=()):
+    """AF01/AF02: summarize scan batches and explicit early-stop reasons."""
+    sizes = [int(x) for x in batch_sizes]
+    if any(x < 0 for x in sizes):
+        raise ValueError("batch sizes must be non-negative")
+    reasons = [str(x) for x in stop_reasons]
+    return {"scan_batch_count": len(sizes),
+            "mean_batch_size": sum(sizes) / len(sizes) if sizes else 0.0,
+            "median_batch_size": sorted(sizes)[len(sizes)//2] if sizes else 0.0,
+            "max_batch_size": max(sizes) if sizes else 0,
+            "early_stop_count": len(reasons),
+            "batch_stop_reason": reasons}
+
+
+def route_regret(delta_time_s: float, plan_before_s: float,
+                 plan_after_s: float) -> float:
+    """W02: realised action cost plus change in remaining plan estimate."""
+    vals = (delta_time_s, plan_before_s, plan_after_s)
+    if not all(isfinite(float(v)) for v in vals) or float(delta_time_s) < 0:
+        raise ValueError('route regret inputs must be finite; action time nonnegative')
+    return float(delta_time_s) + float(plan_after_s) - float(plan_before_s)
+
+
+def route_waste_penalty_seconds(task_type: str, *, speed_mps: float = 5.0,
+                                backtrack_m: float = 0.0,
+                                repeated_edge_m: float = 0.0,
+                                unnecessary_return_m: float = 0.0,
+                                avoidable_crossing_m: float = 0.0,
+                                info_per_second: float = 0.0) -> float:
+    """Task-masked trajectory waste in expected seconds (J02).
+
+    Explore is strongly penalized, Verify moderately, Refine is scaled by its
+    information rate, and Pursue/Clear receive only a small overlap charge.
+    This is a ranking signal, never a safety gate.
+    """
+    key = str(task_type).lower()
+    weights = {
+        "explore": (1.0, 1.0, 1.0, 1.0),
+        "verify": (0.5, 0.5, 0.5, 0.5),
+        "refine": (0.25, 0.25, 0.25, 0.25),
+        "pursue": (0.1, 0.1, 0.1, 0.1),
+        "clear": (0.1, 0.1, 0.1, 0.1),
+    }
+    if key not in weights:
+        raise ValueError("unknown task_type")
+    vals = (speed_mps, backtrack_m, repeated_edge_m, unnecessary_return_m,
+            avoidable_crossing_m, info_per_second)
+    if not all(isfinite(float(v)) for v in vals) or float(speed_mps) <= 0.0:
+        raise ValueError("waste inputs must be finite; speed must be positive")
+    scale = (1.0 / (1.0 + max(0.0, float(info_per_second)))
+             if key == "refine" else 1.0)
+    w = tuple(x * scale for x in weights[key])
+    return (w[0] * float(backtrack_m) + w[1] * float(repeated_edge_m) +
+            w[2] * float(unnecessary_return_m) + w[3] * float(avoidable_crossing_m)) / float(speed_mps)
+
+
+def compute_unnecessary_return_m(points: Sequence[Point], ready_tasks=(),
+                                 near_tol: float = 50.0) -> float:
+    """Compute return distance only from explicit ready-task evidence.
+
+    Each item is ``(task_point, first_ready_index, execution_index)``.  The
+    robot must have been near the task after it became ready, then later travel
+    farther away before execution; otherwise no distance is charged.
+    """
+    if near_tol < 0.0:
+        raise ValueError("near_tol must be non-negative")
+    total = 0.0
+    for q, ready_i, exec_i in ready_tasks:
+        ri, ei = int(ready_i), int(exec_i)
+        if not (0 <= ri < ei < len(points)):
+            raise ValueError("ready task indices must satisfy 0 <= ready < execute < len(points)")
+        prior = min(_dist(points[i], q) for i in range(ri, ei + 1))
+        if prior > float(near_tol):
+            continue
+        later = max(_dist(points[i], q) for i in range(ri, ei + 1))
+        total += max(0.0, later - prior)
+    return total
 
 
 def compute_efficiency_metrics(*, total_time_s, no_progress_time_s=0.0,
                                move_distance_m=0.0, backtrack_m=0.0,
                                repeated_edge_m=0.0, unnecessary_return_m=0.0,
                                scan_time_s=0.0, useful_observations=0,
-                               lower_bound_s=None, route_lower_bound_m=None):
+                               coverage_overlap_gain=0.0, coverage_total_gain=0.0,
+                               lower_bound_s=None, route_lower_bound_m=None,
+                               backbone_initial_count=0, backbone_visited_count=0,
+                               self_intersection_count=0, avoidable_crossing_count=0,
+                               avoidable_crossing_m=0.0, route_regret_waste_s=0.0):
     """Compute ratios with explicit zero-denominator semantics."""
     vals = (total_time_s, no_progress_time_s, move_distance_m, backtrack_m,
-            repeated_edge_m, unnecessary_return_m, scan_time_s)
+            repeated_edge_m, unnecessary_return_m, scan_time_s,
+            coverage_overlap_gain, coverage_total_gain)
     if not all(isfinite(float(v)) for v in vals) or any(float(v) < 0 for v in vals):
         raise ValueError('efficiency inputs must be finite and nonnegative')
     t, move = float(total_time_s), float(move_distance_m)
     useful = int(useful_observations)
     if useful < 0: raise ValueError('useful observations must be nonnegative')
+    if float(coverage_overlap_gain) > float(coverage_total_gain) + 1e-9:
+        raise ValueError('coverage overlap cannot exceed total coverage')
     lb = None if lower_bound_s is None else float(lower_bound_s)
     route_lb = None if route_lower_bound_m is None else float(route_lower_bound_m)
     if lb is not None and (not isfinite(lb) or lb <= 0): raise ValueError('lower bound must be positive')
@@ -132,10 +233,16 @@ def compute_efficiency_metrics(*, total_time_s, no_progress_time_s=0.0,
         wasted_time_ratio=float(no_progress_time_s) / t if t else 0.0,
         backtrack_ratio=float(backtrack_m) / move if move else 0.0,
         repeated_edge_ratio=float(repeated_edge_m) / move if move else 0.0,
+        coverage_overlap_ratio=(float(coverage_overlap_gain) / float(coverage_total_gain)
+                                if float(coverage_total_gain) > 0.0 else 0.0),
+        route_overlap_ratio=float(repeated_edge_m) / move if move else 0.0,
         unnecessary_return_ratio=float(unnecessary_return_m) / move if move else 0.0,
         scan_efficiency_s_per_useful_observation=float(scan_time_s) / useful if useful else 0.0,
         lower_bound_ratio=t / lb if lb else None,
         route_efficiency=move / route_lb if route_lb else None,
+            backbone_pruning_rate=backbone_pruning_rate(backbone_initial_count,
+                                                        backbone_visited_count),
+        route_regret_waste_s=float(route_regret_waste_s),
     )
 
 
@@ -145,6 +252,23 @@ def _segments_cross(a: Point, b: Point, c: Point, d: Point) -> bool:
     e = 1e-9
     x, y, z, w = o(a,b,c), o(a,b,d), o(c,d,a), o(c,d,b)
     return ((x > e and y < -e) or (x < -e and y > e)) and ((z > e and w < -e) or (z < -e and w > e))
+
+
+def _collinear_overlap_length(a: Point, b: Point, c: Point, d: Point) -> float:
+    """Length of the positive overlap of two trajectory segments."""
+    vx, vy = b[0] - a[0], b[1] - a[1]
+    ll = vx * vx + vy * vy
+    if ll <= 1e-12:
+        return 0.0
+    cross = lambda p: vx * (p[1] - a[1]) - vy * (p[0] - a[0])
+    tol = 1e-7 * max(1.0, ll ** 0.5)
+    if abs(cross(c)) > tol or abs(cross(d)) > tol:
+        return 0.0
+    u, v = (
+        ((c[0] - a[0]) * vx + (c[1] - a[1]) * vy) / ll,
+        ((d[0] - a[0]) * vx + (d[1] - a[1]) * vy) / ll,
+    )
+    return max(0.0, min(1.0, max(u, v)) - max(0.0, min(u, v))) * (ll ** 0.5)
 
 
 @dataclass
@@ -161,12 +285,19 @@ def compute_route_metrics(
     start_pos: Point,
     stop_tol: float = 5.0,
     revisit_tol: float = 50.0,
+    backtrack_k: int = 3,
+    backtrack_cos_threshold: float = -0.5,
+    ready_tasks=(),
 ) -> RouteMetrics:
     """Decompose a realised route into the P0 #9 diagnostics. Pure function — no
     side effects, no dependence on the planner or belief. ``start_pos`` is the robot's
     pose at episode start (the leg into the first stop is measured from there)."""
     if not events:
         return RouteMetrics()
+    if int(backtrack_k) < 1:
+        raise ValueError("backtrack_k must be >= 1")
+    if not -1.0 <= float(backtrack_cos_threshold) <= 1.0:
+        raise ValueError("backtrack_cos_threshold must be in [-1, 1]")
 
     start = (float(start_pos[0]), float(start_pos[1]))
 
@@ -233,22 +364,38 @@ def compute_route_metrics(
     for i, ((a, b), length) in enumerate(zip(legs, lengths)):
         if length == 0.0:
             continue
-        if i:
-            (pa, pb) = legs[i - 1]
+        if i >= 1:
+            # Compare against the recent principal direction p_t-p_{t-k}, so
+            # an ordinary turn is not mislabeled as backtracking.
+            lookback = min(int(backtrack_k), i)
+            prior = points[i - lookback]
+            wx, wy = a[0] - prior[0], a[1] - prior[1]
             vx, vy = b[0] - a[0], b[1] - a[1]
-            wx, wy = pb[0] - pa[0], pb[1] - pa[1]
-            denom = length * _dist(pa, pb)
-            if denom and (vx * wx + vy * wy) / denom < -0.5:
+            denom = length * hypot(wx, wy)
+            if denom and (vx * wx + vy * wy) / denom < float(backtrack_cos_threshold):
                 backtrack += length
+        leg_repeated = 0.0
         for j in range(i):
             old_a, old_b = legs[j]
-            if ((_dist(a, old_b) <= stop_tol and _dist(b, old_a) <= stop_tol)
-                    or (_dist(a, old_a) <= stop_tol and _dist(b, old_b) <= stop_tol)):
-                repeated += length
-                break
-    unnecessary_return = revisit
-    crossings = sum(_segments_cross(*legs[i], *legs[j])
-                    for i in range(len(legs)) for j in range(i + 2, len(legs)))
+            leg_repeated += _collinear_overlap_length(a, b, old_a, old_b)
+        # A segment can overlap several fragmented historical segments; the
+        # metric is bounded by the new leg length rather than double-counting.
+        repeated += min(leg_repeated, length)
+    unnecessary_return = compute_unnecessary_return_m(points, ready_tasks,
+                                                       near_tol=revisit_tol)
+    crossing_pairs = [(i, j) for i in range(len(legs)) for j in range(i + 2, len(legs))
+                      if _segments_cross(*legs[i], *legs[j])]
+    crossings = len(crossing_pairs)
+    avoidable = 0
+    avoidable_m = 0.0
+    for i, j in crossing_pairs:
+        a, b = legs[i]
+        c, d = legs[j]
+        original = _dist(a, b) + _dist(c, d)
+        repaired = _dist(a, c) + _dist(b, d)
+        if original > repaired + 1e-9:
+            avoidable += 1
+            avoidable_m += original - repaired
 
     return RouteMetrics(
         services_per_stop=(n_services / n_stops) if n_stops else 0.0,
@@ -263,6 +410,9 @@ def compute_route_metrics(
         clear_distance=sum(s.leg_in for s in stops if s.has_clear),
         n_longjump=sum(d > 1000.0 for d in lengths),
         n_crossing=int(crossings),
+        self_intersection_count=int(crossings),
+        avoidable_crossing_count=int(avoidable),
+        avoidable_crossing_m=float(avoidable_m),
         backtrack_m=backtrack,
         repeated_edge_m=repeated,
         unnecessary_return_m=unnecessary_return,

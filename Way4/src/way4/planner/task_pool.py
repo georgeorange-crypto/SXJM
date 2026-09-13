@@ -27,19 +27,43 @@ class RemainingTaskPool:
     def __init__(self, starvation_limit: int = 8) -> None:
         self.starvation_limit = int(starvation_limit)
         self.waiting: Dict[int, WaitingTask] = {}
+        self.pending_tasks: Dict[str, list[RemainingTask]] = {
+            kind: [] for kind in ("EXPLORE", "INITIALIZE", "REFINE", "REACQUIRE",
+                                  "PURSUE", "CLEAR", "VERIFY", "BACKBONE")
+        }
 
     def sync(self, belief) -> None:
         """Create/remove refine tasks without changing any belief status."""
+        self.pending_tasks = {kind: [] for kind in self.pending_tasks}
         active = set()
         for channel, b in belief.channels.items():
-            if b.status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED):
+            status = b.status
+            if status in (ChannelStatus.UNKNOWN, ChannelStatus.PRESENT_UNOBSERVED):
+                self.pending_tasks["EXPLORE"].append(RemainingTask("EXPLORE", channel=int(channel)))
+                self.pending_tasks["VERIFY"].append(RemainingTask("VERIFY", channel=int(channel)))
+                self.pending_tasks["BACKBONE"].append(RemainingTask("BACKBONE", channel=int(channel)))
+            if status == ChannelStatus.PRESENT_UNOBSERVED:
+                self.pending_tasks["INITIALIZE"].append(RemainingTask("INITIALIZE", channel=int(channel)))
+            if status in (ChannelStatus.DETECTED, ChannelStatus.INITIALIZED):
                 active.add(int(channel))
                 self.waiting.setdefault(
                     int(channel), WaitingTask(RemainingTask("REFINE", channel=int(channel), mandatory=True))
                 )
+                self.pending_tasks["REFINE"].append(RemainingTask("REFINE", channel=int(channel)))
+                self.pending_tasks["REACQUIRE"].append(RemainingTask("REACQUIRE", channel=int(channel)))
+                self.pending_tasks["PURSUE"].append(RemainingTask("PURSUE", channel=int(channel)))
+            if getattr(b, "is_clearable", False):
+                self.pending_tasks["CLEAR"].append(RemainingTask("CLEAR", channel=int(channel)))
         for channel in list(self.waiting):
             if channel not in active:
                 del self.waiting[channel]
+
+    def register(self, task: RemainingTask) -> None:
+        """Add an externally discovered task without touching belief state."""
+        key = str(task.task_type).upper()
+        if key not in self.pending_tasks:
+            raise ValueError(f"unsupported task type: {task.task_type}")
+        self.pending_tasks[key].append(task)
 
     def consider_wait(self, channel: int, dedicated_cost: float,
                       route_cost: float, waypoint, *, delay_safe: bool = True) -> bool:

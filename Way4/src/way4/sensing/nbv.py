@@ -329,8 +329,17 @@ class MinimaxNBV:
         for q in cands:
             if scanned and any(dist(q, s) <= eps for s in scanned):
                 continue
-            u = self.worst_case_diameter(poly, q, hyps, current)
-            expected, miss_rate = self.objective_metrics(poly, q, hyps, current)
+            # Compute each post-measurement polygon only once.  The previous
+            # implementation traversed the same convex clipping work twice:
+            # once for minimax U(q), then again for expected diameter and miss
+            # rate.  Reusing these values is exact and keeps the objective
+            # semantics unchanged.
+            posts = [self.post_measurement_diameter(poly, q, p, current)
+                     for p in hyps]
+            u = max(posts, default=current)
+            expected = sum(posts) / len(posts) if posts else current
+            miss_rate = (sum(dist(q, p) > self.detect_lower_bound for p in hyps)
+                         / len(hyps) if hyps else 1.0)
             # Approach term: worst-case distance from q to the region. It only breaks
             # ties in u — when no viewpoint can guarantee a shrink (a region too large
             # for the guaranteed radius, so every u == current), it homes the robot to

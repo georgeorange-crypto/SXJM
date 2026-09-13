@@ -18,6 +18,8 @@ def test_transition_audit_reconciles_time_and_exports_fields():
     a.validate()
     row = a.to_record()
     assert row["delta_virtual_time_s"] == 107.0
+    assert a.delta_virtual_time == a.delta_virtual_time_s == 107.0
+    assert row["delta_virtual_time"] == 107.0
     assert row["accounted_time_s"] == 107.0
     assert row["delta_move_distance_m"] == 500.0
 

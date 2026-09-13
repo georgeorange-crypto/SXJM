@@ -1,0 +1,76 @@
+{
+  "rewards": [
+    -0.1,
+    -0.1,
+    -0.1,
+    -0.1,
+    -0.1,
+    -0.1,
+    -100.0
+  ],
+  "rows": [
+    {
+      "gamma": 1.0,
+      "gae_lambda": 0.95,
+      "first_advantage": -74.03900528124996,
+      "first_return": -74.03900528124996,
+      "terminal_advantage": -100.0
+    },
+    {
+      "gamma": 1.0,
+      "gae_lambda": 0.97,
+      "first_advantage": -83.85396047646996,
+      "first_return": -83.85396047646996,
+      "terminal_advantage": -100.0
+    },
+    {
+      "gamma": 1.0,
+      "gae_lambda": 0.99,
+      "first_advantage": -94.73321344608996,
+      "first_return": -94.73321344608996,
+      "terminal_advantage": -100.0
+    },
+    {
+      "gamma": 0.995,
+      "gae_lambda": 0.95,
+      "first_advantage": -71.85492554353551,
+      "first_return": -71.85492554353551,
+      "terminal_advantage": -100.0
+    },
+    {
+      "gamma": 0.995,
+      "gae_lambda": 0.97,
+      "first_advantage": -81.37940490038196,
+      "first_return": -81.37940490038196,
+      "terminal_advantage": -100.0
+    },
+    {
+      "gamma": 0.995,
+      "gae_lambda": 0.99,
+      "first_advantage": -91.93666253118975,
+      "first_return": -91.93666253118975,
+      "terminal_advantage": -100.0
+    },
+    {
+      "gamma": 0.99,
+      "gae_lambda": 0.95,
+      "first_advantage": -69.72496427904481,
+      "first_return": -69.72496427904481,
+      "terminal_advantage": -100.0
+    },
+    {
+      "gamma": 0.99,
+      "gae_lambda": 0.97,
+      "first_advantage": -78.96617056915507,
+      "first_return": -78.96617056915507,
+      "terminal_advantage": -100.0
+    },
+    {
+      "gamma": 0.99,
+      "gae_lambda": 0.99,
+      "first_advantage": -89.20941746449665,
+      "first_return": -89.20941746449665,
+      "terminal_advantage": -100.0
+    }
+  ]
+}

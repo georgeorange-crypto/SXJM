@@ -9,6 +9,7 @@ from way4.executor import Way3EngineAdapter
 from way4.pipeline import Way4Pipeline
 from way4.planner import RecedingHorizonPlanner
 from way4.rl.final_planner import load_candidate_policy, CandidatePPOPlanner
+from way4.rl.checkpoint_gate import validation_gate
 
 def main():
  p=argparse.ArgumentParser(); p.add_argument('--checkpoint',required=True); p.add_argument('--seeds',default='2040,2041'); p.add_argument('--problem',type=int,default=4); p.add_argument('--max-steps',type=int,default=3000); p.add_argument('--out'); p.add_argument('--compact',action='store_true'); a=p.parse_args()
@@ -27,7 +28,7 @@ def main():
                     coverage_strategy='active_fallback', enable_no_signal=True,
                     enable_cardinality=True)
   r=pipe.run()
-  row={'seed':seed,'full_clear':case.cleared_count==case.total,'cleared':case.cleared_count,'total':case.total,'time_s':r.virtual_time_s,'avg_time_per_source_s':r.virtual_time_s/case.total if case.total else None,'steps':r.steps,'move_m':r.move_distance_m,'measure':r.n_measure,'switch':r.n_switch,'clear':r.n_clear,'clear_hit':r.n_clear_hit,'time_move_s':r.time_move_s,'time_measure_s':r.time_measure_s,'time_switch_s':r.time_switch_s,'time_clear_s':r.time_clear_s,'services_per_stop':r.services_per_stop,'revisit_distance':r.revisit_distance,'shared_stop_ratio':r.shared_stop_ratio,'total_distance_m':r.total_distance_m,'clear_distance_m':r.clear_distance_m,'longjump':r.n_longjump,'crossing':r.n_crossing,'source_diagnostics':r.source_diagnostics,'policy_decisions':len(planner.decisions),'ppo_fallback':bool(planner.watchdog.fallback),'ppo_fallback_reason':planner.fallback_reason,'error':r.error}
+  row={'seed':seed,'full_clear':case.cleared_count==case.total,'cleared':case.cleared_count,'total':case.total,'time_s':r.virtual_time_s,'avg_time_per_source_s':r.virtual_time_s/case.total if case.total else None,'steps':r.steps,'move_m':r.move_distance_m,'measure':r.n_measure,'switch':r.n_switch,'clear':r.n_clear,'clear_hit':r.n_clear_hit,'illegal_clear':int(r.illegal_clear),'safety_violation':int(r.safety_violation),'time_move_s':r.time_move_s,'time_measure_s':r.time_measure_s,'time_switch_s':r.time_switch_s,'time_clear_s':r.time_clear_s,'services_per_stop':r.services_per_stop,'revisit_distance':r.revisit_distance,'shared_stop_ratio':r.shared_stop_ratio,'total_distance_m':r.total_distance_m,'clear_distance_m':r.clear_distance_m,'longjump':r.n_longjump,'crossing':r.n_crossing,'source_diagnostics':r.source_diagnostics,'policy_decisions':len(planner.decisions),'ppo_fallback':bool(planner.watchdog.fallback),'ppo_fallback_reason':planner.fallback_reason,'greedy':True,'error':r.error}
   if not a.compact:
    row.update({'jammers': case.reveal()['jammers'], 'events': [e.__dict__ | {'event_type': e.event_type.value} for e in pipe.events],
                'field': case.field.config(), 'transitions': [t.to_record() for t in pipe.transitions],
@@ -35,7 +36,8 @@ def main():
                'ppo_records': getattr(policy, 'records', [])})
   rows.append(row)
   persist()
- payload={'checkpoint':a.checkpoint,'problem':a.problem,'configuration':{'planner_mode':'final_ppo','adaptive_scan':True,'batch_stop':True,'opportunistic_clear':True,'routing_strategy':'tspn','nbv_objective':'minimax','coverage_strategy':'active_fallback','enable_no_signal':True,'enable_cardinality':True},'rows':rows,'full_clear_rate':sum(x['full_clear'] for x in rows)/len(rows)}
+ gate = validation_gate(rows, seeds)
+ payload={'checkpoint':a.checkpoint,'problem':a.problem,'configuration':{'planner_mode':'final_ppo','adaptive_scan':True,'batch_stop':True,'opportunistic_clear':True,'routing_strategy':'tspn','nbv_objective':'minimax','coverage_strategy':'active_fallback','enable_no_signal':True,'enable_cardinality':True},'rows':rows,'full_clear_rate':sum(x['full_clear'] for x in rows)/len(rows),'validation_gate':gate}
  print(json.dumps(payload,ensure_ascii=False,indent=2))
- return 0 if payload['full_clear_rate']==1 else 2
+ return 0 if gate['passed'] else 2
 if __name__=='__main__': raise SystemExit(main())

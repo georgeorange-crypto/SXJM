@@ -1,0 +1,49 @@
+{
+  "artifact_a": {
+    "M0": [
+      {
+        "seed": 2000,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 16331.685016,
+        "error": null,
+        "steps": 117,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      }
+    ]
+  },
+  "artifact_b": {
+    "M1": [
+      {
+        "seed": 2000,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 13501.276052,
+        "error": null,
+        "steps": 109,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      }
+    ]
+  },
+  "n_pairs": 1,
+  "pairs": [
+    {
+      "seed": 2000,
+      "a_full_clear": true,
+      "b_full_clear": true,
+      "a_time_s": 16331.685016,
+      "b_time_s": 13501.276052,
+      "delta_b_minus_a_s": -2830.408964,
+      "a_steps": 117,
+      "b_steps": 109
+    }
+  ]
+}

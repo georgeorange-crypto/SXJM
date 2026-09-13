@@ -1,0 +1,85 @@
+{
+  "artifact_a": {
+    "M1": [
+      {
+        "seed": 2000,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 13501.276052,
+        "error": null,
+        "steps": 109,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2001,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 14023.570592,
+        "error": null,
+        "steps": 87,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      }
+    ]
+  },
+  "artifact_b": {
+    "M3": [
+      {
+        "seed": 2000,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 13,
+        "virtual_time_s": 13797.891076,
+        "error": null,
+        "steps": 75,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      },
+      {
+        "seed": 2001,
+        "success": true,
+        "full_clear": true,
+        "resolved": 20,
+        "n_channels": 20,
+        "present": 14,
+        "virtual_time_s": 13989.169558,
+        "error": null,
+        "steps": 74,
+        "illegal_clear": 0,
+        "safety_violation": 0
+      }
+    ]
+  },
+  "n_pairs": 2,
+  "pairs": [
+    {
+      "seed": 2000,
+      "a_full_clear": true,
+      "b_full_clear": true,
+      "a_time_s": 13501.276052,
+      "b_time_s": 13797.891076,
+      "delta_b_minus_a_s": 296.61502400000063,
+      "a_steps": 109,
+      "b_steps": 75
+    },
+    {
+      "seed": 2001,
+      "a_full_clear": true,
+      "b_full_clear": true,
+      "a_time_s": 14023.570592,
+      "b_time_s": 13989.169558,
+      "delta_b_minus_a_s": -34.401034000000436,
+      "a_steps": 87,
+      "b_steps": 74
+    }
+  ]
+}

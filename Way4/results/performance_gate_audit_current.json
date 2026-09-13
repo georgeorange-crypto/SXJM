@@ -1,0 +1,40 @@
+{
+  "source_complete": true,
+  "cells": {
+    "minus_no_signal": {
+      "n_rows": 1,
+      "n_valid": 1,
+      "full_clear_rate": 0.0,
+      "evidence_status": "insufficient_evidence",
+      "gates": {}
+    },
+    "minus_cardinality": {
+      "n_rows": 1,
+      "n_valid": 1,
+      "full_clear_rate": 0.0,
+      "evidence_status": "insufficient_evidence",
+      "gates": {}
+    },
+    "nbv_greedy": {
+      "n_rows": 1,
+      "n_valid": 1,
+      "full_clear_rate": 0.0,
+      "evidence_status": "insufficient_evidence",
+      "gates": {}
+    },
+    "coverage_backbone_only": {
+      "n_rows": 1,
+      "n_valid": 1,
+      "full_clear_rate": 0.0,
+      "evidence_status": "insufficient_evidence",
+      "gates": {}
+    },
+    "routing_nearest": {
+      "n_rows": 1,
+      "n_valid": 1,
+      "full_clear_rate": 0.0,
+      "evidence_status": "insufficient_evidence",
+      "gates": {}
+    }
+  }
+}

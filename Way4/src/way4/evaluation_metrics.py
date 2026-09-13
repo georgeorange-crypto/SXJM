@@ -25,6 +25,9 @@ def episode_row(result, *, n_sources=None, clear_route_reference=None,
         "N_empty_scan": int(getattr(result, "n_empty_scan", 0)),
         "N_longjump": int(getattr(result, "n_longjump", 0)),
         "N_crossing": int(getattr(result, "n_crossing", 0)),
+        "self_intersection_count": int(getattr(result, "self_intersection_count", 0)),
+        "avoidable_crossing_count": int(getattr(result, "avoidable_crossing_count", 0)),
+        "avoidable_crossing_m": float(getattr(result, "avoidable_crossing_m", 0.0)),
         "T_move_s": float(getattr(result, "time_move_s", 0.0)),
         "T_measure_s": float(getattr(result, "time_measure_s", 0.0)),
         "T_switch_s": float(getattr(result, "time_switch_s", 0.0)),
@@ -44,6 +47,10 @@ def episode_row(result, *, n_sources=None, clear_route_reference=None,
         "backtrack_m": float(getattr(result, "backtrack_m", 0.0)),
         "repeated_edge_m": float(getattr(result, "repeated_edge_m", 0.0)),
         "unnecessary_return_m": float(getattr(result, "unnecessary_return_m", 0.0)),
+        "coverage_overlap_ratio": float(getattr(
+            result, "efficiency_metrics", {}).get("coverage_overlap_ratio", 0.0)),
+        "route_overlap_ratio": float(getattr(
+            result, "efficiency_metrics", {}).get("route_overlap_ratio", 0.0)),
     }
     return row
 def summarize(rows):

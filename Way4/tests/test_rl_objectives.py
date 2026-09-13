@@ -1,6 +1,7 @@
+import pytest
 from way4.rl.objectives import (
     RewardConfig, critic_ablation_values, critic_target, episode_return,
-    terminal_reward, transition_reward,
+    dense_time_reward, terminal_reward, transition_reward, potential_shaping, state_potential,
 )
 
 
@@ -24,3 +25,15 @@ def test_critic_is_negative_remaining_time_plus_bounded_residual_contract():
         "learned_critic_only": 2.0,
         "analytic_plus_learned_residual": -28.0,
     }
+
+
+def test_potential_shaping_is_small_and_state_based():
+    before = state_potential(certificate_progress=1, unresolved_count=3)
+    after = state_potential(certificate_progress=2, unresolved_count=2)
+    assert potential_shaping(before, after, eta=.05) == .1
+    assert dense_time_reward(100.0, cfg=RewardConfig(shaping_eta=.05),
+                             phi_before=before, phi_after=after) == pytest.approx(-.1 + .1)
+
+
+def test_dense_time_reward_charges_explicit_detour_seconds():
+    assert dense_time_reward(100.0, detour_time_s=50.0) == pytest.approx(-.15)

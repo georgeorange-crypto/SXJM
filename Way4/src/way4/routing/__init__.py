@@ -15,7 +15,7 @@ from .tsp import (
     two_opt_open,
     route_repair_open,
 )
-from .unified import ServiceOpportunity, UnifiedRoutePlanner
+from .unified import RouteCleanupScheduler, ServiceOpportunity, UnifiedRoutePlanner
 
 __all__ = [
     "LocalizationCostModel",
@@ -31,4 +31,5 @@ __all__ = [
     "route_repair_open",
     "ServiceOpportunity",
     "UnifiedRoutePlanner",
+    "RouteCleanupScheduler",
 ]

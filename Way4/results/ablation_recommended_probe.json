@@ -1,0 +1,21 @@
+{
+  "problem": 4,
+  "seeds": [
+    2000
+  ],
+  "results": {
+    "P4": [
+      {
+        "seed": 2000,
+        "success": null,
+        "error": "unsupported_configuration",
+        "virtual_time_s": null
+      }
+    ]
+  },
+  "selected_cells": [
+    "P4"
+  ],
+  "unsupported_are_explicit": true,
+  "complete": true
+}

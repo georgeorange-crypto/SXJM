@@ -52,7 +52,10 @@ class CandidateGenerator:
         min_coverage_gain: float = 1e-9,
         hypothesis_layer=None,
         coverage_strategy: str = "active_fallback",
-        min_sensing_efficiency: float = 0.0,
+        # Formal default: do not admit explore/verify batches whose hard
+        # coverage gain cannot pay for their dwell time.  ``0.0`` remains an
+        # explicit ablation setting for compatibility experiments.
+        min_sensing_efficiency: float = 1e-3,
     ) -> None:
         self.nbv = nbv or MinimaxNBV()
         self.scheduler = scheduler or ChannelScheduler()
@@ -68,6 +71,8 @@ class CandidateGenerator:
             raise ValueError("coverage_strategy must be 'active_fallback' or 'backbone_only'")
         self.coverage_strategy = coverage_strategy
         self.min_sensing_efficiency = float(min_sensing_efficiency)
+        if self.min_sensing_efficiency < 0.0:
+            raise ValueError("min_sensing_efficiency must be non-negative")
 
     # -- public -------------------------------------------------------------
 
@@ -92,6 +97,106 @@ class CandidateGenerator:
         if belief.all_resolved():
             cands.append(self._exit_candidate(state))
         return cands
+
+    def refine_with_piggyback(self, belief, certificate, state,
+                              backbone_points: Sequence[Point],
+                              scan_mode: SchedulerMode = SchedulerMode.EARLY) -> List[MacroCandidate]:
+        """Return each dedicated REFINE plus viable future-backbone variants."""
+        dedicated = self._refine_candidates(belief, certificate, state, scan_mode)
+        out = list(dedicated)
+        for base in dedicated:
+            channel = base.meta.get("refine_channel")
+            if channel is None:
+                continue
+            for index, point in enumerate(backbone_points):
+                plan = self.scheduler.select(point, belief, certificate, state.channel,
+                                              mode=scan_mode, must_include=[int(channel)])
+                if plan.is_empty:
+                    continue
+                candidate = MacroCandidate(MacroActionType.REFINE, point,
+                                            scan_channels=tuple(plan.channels))
+                candidate.refinement_gain = self._unknown_coverage_gain(
+                    belief, certificate, candidate.scan_channels, point)
+                candidate.exploration_gain = plan.value
+                candidate.expected_time = self.cost.batch_scan_time_s(
+                    state, point, candidate.scan_channels)
+                candidate.meta.update({"refine_channel": int(channel),
+                                       "piggyback_backbone_index": int(index),
+                                       "piggyback": True,
+                                       "backbone_kind": "PiggybackRefine"})
+                out.append(candidate)
+        return out
+
+    def backbone_candidates(self, backbone, state: RobotState) -> List[MacroCandidate]:
+        """Expose FOLLOW/SKIP/BRIDGE choices for an existing open backbone route."""
+        from math import hypot
+        from .backbone import BackboneStatus
+        route = [backbone.nodes[node_id] for node_id in backbone.route
+                 if node_id in backbone.nodes]
+        pending = [node for node in route if node.status == BackboneStatus.UNSATISFIED]
+        if not pending:
+            return []
+        candidates: List[MacroCandidate] = []
+        first = pending[0]
+        nxt = MacroCandidate(MacroActionType.EXPLORE, first.point,
+                             scan_channels=tuple(first.channels_if_needed))
+        nxt.meta.update({"backbone_kind": "BackboneNext",
+                         "backbone_index": backbone.route.index(first.node_id)})
+        candidates.append(nxt)
+        replaced_before = any(node.status != BackboneStatus.UNSATISFIED
+                              for node in route[:route.index(first)])
+        if replaced_before and len(pending) > 1:
+            node = pending[1]
+            skip = MacroCandidate(MacroActionType.EXPLORE, node.point,
+                                  scan_channels=tuple(node.channels_if_needed))
+            skip.meta.update({"backbone_kind": "BackboneSkip",
+                              "backbone_index": backbone.route.index(node.node_id)})
+            candidates.append(skip)
+        bridge = min(pending, key=lambda node: (hypot(node.point[0] - state.pos[0],
+                                                       node.point[1] - state.pos[1]), node.node_id))
+        bridge_candidate = MacroCandidate(MacroActionType.EXPLORE, bridge.point,
+                                          scan_channels=tuple(bridge.channels_if_needed))
+        bridge_candidate.meta.update({"backbone_kind": "BackboneBridge",
+                                      "backbone_index": backbone.route.index(bridge.node_id),
+                                      "bridge_distance": hypot(bridge.point[0] - state.pos[0],
+                                                                bridge.point[1] - state.pos[1])})
+        candidates.append(bridge_candidate)
+        return candidates
+
+    def backbone_closure_candidates(self, backbone, state: RobotState) -> List[MacroCandidate]:
+        """Prioritize nodes with the largest remaining certificate geometry debt."""
+        from .backbone import BackboneStatus
+        pending = [n for n in backbone.nodes.values()
+                   if n.status in (BackboneStatus.UNSATISFIED, BackboneStatus.PARTIALLY_SATISFIED)]
+        pending.sort(key=lambda n: (-len(n.certificate_holes), -len(n.directional_triangles), n.node_id))
+        out = []
+        for node in pending[:1]:
+            c = MacroCandidate(MacroActionType.EXPLORE, node.point,
+                               scan_channels=tuple(node.channels_if_needed))
+            c.meta.update({"backbone_kind": "BackboneClosure", "certificate_debt": len(node.certificate_holes),
+                           "backbone_node": node.node_id})
+            out.append(c)
+        return out
+
+    def piggyback_clear_candidates(self, belief, backbone_points: Sequence[Point], state: RobotState,
+                                   max_detour_s: float = 30.0) -> List[MacroCandidate]:
+        """Offer clear actions associated with future backbone visits when close enough."""
+        from math import hypot
+        out = []
+        for channel in belief.clearable_channels():
+            target = belief[channel].clear_target
+            if target is None:
+                continue
+            for index, point in enumerate(backbone_points):
+                detour = hypot(target[0] - point[0], target[1] - point[1])
+                if detour > max_detour_s:
+                    continue
+                c = MacroCandidate(MacroActionType.CLEAR, target, clear_channel=channel)
+                c.expected_time = self.cost.clear_time_s(state, target, hit=True)
+                c.meta.update({"backbone_kind": "PiggybackClear", "piggyback": True,
+                               "backbone_index": index, "backbone_detour": detour})
+                out.append(c)
+        return out
 
     def generate_spatial_candidates(self, belief, certificate, state,
                                     scan_mode: SchedulerMode = SchedulerMode.EARLY):
@@ -232,6 +337,9 @@ class CandidateGenerator:
             m.exploration_gain = plan.value
             m.expected_time = self.cost.batch_scan_time_s(state, q, plan_channels)
             m.meta["refine_channel"] = c
+            m.meta["piggyback"] = False
+            m.meta["p_completion"] = min(1.0, max(0.0, float(res.expected_shrink) /
+                                                   max(float(belief[c].diameter), 1e-9)))
             m.meta["worst_case_diameter"] = res.worst_case_diameter
             m.meta["tspn_radius"] = max(0.0, float(getattr(belief[c], "mec_radius", 0.0)))
             out.append(m)
@@ -255,6 +363,7 @@ class CandidateGenerator:
                     "completion_candidate": True,
                     "completion_target_radius": belief[c].clear_threshold,
                     "completion_probability": 1.0,
+                    "p_completion": 1.0,
                 })
                 out.append(cm)
         return out

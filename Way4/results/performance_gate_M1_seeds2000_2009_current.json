@@ -1,0 +1,53 @@
+{
+  "source_complete": true,
+  "cells": {
+    "M1": {
+      "n_rows": 10,
+      "n_valid": 10,
+      "full_clear_rate": 1.0,
+      "evidence_status": "ready",
+      "gates": {
+        "G1": {
+          "gate": "G1",
+          "threshold_s": 1000.0,
+          "time_ok": true,
+          "full_clear_ok": true,
+          "clear_correct": true,
+          "certificate_sound": true,
+          "passed": true
+        },
+        "G2": {
+          "gate": "G2",
+          "threshold_s": 700.0,
+          "time_ok": false,
+          "full_clear_ok": true,
+          "clear_correct": true,
+          "certificate_sound": true,
+          "passed": false
+        },
+        "G3": {
+          "gate": "G3",
+          "threshold_s": 500.0,
+          "time_ok": false,
+          "full_clear_ok": true,
+          "clear_correct": true,
+          "certificate_sound": true,
+          "passed": false
+        },
+        "FINAL": {
+          "gate": "FINAL",
+          "threshold_s": 400.0,
+          "time_ok": false,
+          "full_clear_ok": true,
+          "clear_correct": true,
+          "certificate_sound": true,
+          "passed": false
+        }
+      },
+      "mean_time_s_per_target": 748.80873732,
+      "median_time_s_per_target": 759.37014565,
+      "p90_time_s_per_target": 791.59951673,
+      "max_time_s_per_target": 792.32597
+    }
+  }
+}
